@@ -2,71 +2,180 @@
 {% block title %}映迹工坊 - EmbyPulse{% endblock %}
 {% block head %}
 <style>
-    .poster-container { width: 375px; height: 667px; background: linear-gradient(135deg, #1f2937 0%, #111827 100%); box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.5); transform-origin: top center; }
+    .poster-container { 
+        width: 375px; 
+        height: 667px; 
+        box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.5); 
+        transform-origin: top center; 
+        background-size: cover;
+        background-position: center;
+        transition: background 0.5s ease;
+    }
+    /* 默认背景 (深邃夜空) */
+    .bg-default { background: linear-gradient(135deg, #1f2937 0%, #111827 100%); }
+    
     .glass-card { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); }
     .user-option.selected { border-color: #16a34a; background-color: #f0fdf4; }
+    
+    /* 背景选择球 */
+    .bg-option { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s; }
+    .bg-option:hover { transform: scale(1.2); }
+    .bg-option.active { border-color: #16a34a; transform: scale(1.1); }
 </style>
 {% endblock %}
+
 {% block content %}
 <div class="flex h-full flex-col md:flex-row overflow-hidden">
+    
     <div class="w-full md:w-80 bg-white border-b md:border-b-0 md:border-r border-gray-200 p-4 md:p-6 flex flex-col z-20 shrink-0 max-h-[40vh] md:max-h-full overflow-y-auto">
-        <h2 class="text-lg md:text-xl font-bold text-gray-800 mb-4">配置报告</h2>
-        <div class="space-y-4 flex-1">
+        <h2 class="text-lg md:text-xl font-bold text-gray-800 mb-6 flex items-center">
+            <i class="fa-solid fa-wand-magic-sparkles text-purple-500 mr-2"></i> 配置报告
+        </h2>
+        
+        <div class="space-y-6 flex-1">
             <div>
-                <label class="block text-xs font-bold text-gray-500 uppercase mb-2">选择用户</label>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-2">主角</label>
                 <div id="user-list-container" class="flex md:block space-x-2 md:space-x-0 md:space-y-2 overflow-x-auto pb-2 md:pb-0 hide-scrollbar">
-                    <p class="text-gray-400 text-xs">加载中...</p>
+                    <p class="text-gray-400 text-xs">正在加载用户...</p>
                 </div>
             </div>
+
             <div>
-                <label class="block text-xs font-bold text-gray-500 uppercase mb-2">寄语</label>
-                <textarea id="custom-msg" rows="2" class="w-full border-gray-300 rounded-lg text-sm p-2 border" oninput="document.getElementById('poster-msg').innerText = this.value">生活不仅有代码，还有电影。</textarea>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-2">海报氛围</label>
+                <div class="flex flex-wrap gap-3">
+                    <div class="bg-option active" style="background: linear-gradient(135deg, #1f2937 0%, #111827 100%)" onclick="setBg(this, 'linear-gradient(135deg, #1f2937 0%, #111827 100%)')"></div>
+                    <div class="bg-option" style="background: linear-gradient(to right, #434343 0%, black 100%)" onclick="setBg(this, 'linear-gradient(to right, #434343 0%, black 100%)')"></div>
+                    <div class="bg-option" style="background: linear-gradient(to top, #30cfd0 0%, #330867 100%)" onclick="setBg(this, 'linear-gradient(to top, #30cfd0 0%, #330867 100%)')"></div>
+                    <div class="bg-option" style="background: linear-gradient(to top, #5f72bd 0%, #9b23ea 100%)" onclick="setBg(this, 'linear-gradient(to top, #5f72bd 0%, #9b23ea 100%)')"></div>
+                    <div class="bg-option" style="background: linear-gradient(120deg, #d4fc79 0%, #96e6a1 100%)" onclick="setBg(this, 'linear-gradient(120deg, #d4fc79 0%, #96e6a1 100%)')"></div>
+                    <div class="bg-option" style="background: linear-gradient(to right, #fa709a 0%, #fee140 100%)" onclick="setBg(this, 'linear-gradient(to right, #fa709a 0%, #fee140 100%)')"></div>
+                </div>
+            </div>
+
+            <div>
+                <div class="flex justify-between items-center mb-2">
+                    <label class="block text-xs font-bold text-gray-500 uppercase">年度寄语</label>
+                    <button onclick="randomQuote()" class="text-xs text-blue-500 hover:text-blue-700 flex items-center transition">
+                        <i class="fa-solid fa-dice mr-1"></i> 换一句
+                    </button>
+                </div>
+                <textarea id="custom-msg" rows="3" class="w-full border-gray-300 rounded-lg text-sm p-2 border focus:ring-green-500 focus:border-green-500 transition" 
+                    oninput="document.getElementById('poster-msg').innerText = this.value"
+                >生活不仅有代码，还有电影。</textarea>
             </div>
         </div>
-        <button onclick="downloadPoster()" id="dl-btn" class="mt-4 w-full py-3 bg-green-600 text-white font-bold rounded-lg shadow flex justify-center items-center text-sm"><i class="fa-solid fa-download mr-2"></i> 保存海报</button>
+
+        <button onclick="downloadPoster()" id="dl-btn" class="mt-6 w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-lg transition transform active:scale-95 flex justify-center items-center text-sm">
+            <i class="fa-solid fa-download mr-2"></i> 保存映迹海报
+        </button>
     </div>
 
     <div class="flex-1 bg-gray-100 flex justify-center p-4 md:p-8 overflow-y-auto overflow-x-hidden relative" id="preview-wrapper">
         <div id="scale-wrapper" class="mt-4 md:mt-0">
-            <div id="capture-area" class="poster-container flex flex-col relative shrink-0">
-                <div id="poster-bg" class="absolute inset-0 z-0 opacity-40 blur-sm bg-cover bg-center transition-all duration-1000" style="background-image: url('');"></div>
-                <div class="absolute inset-0 z-0 bg-gradient-to-t from-gray-900 via-gray-900/80 to-transparent"></div>
-                <div class="relative z-10 p-6 flex-1 flex flex-col text-white">
-                    <div class="flex justify-between items-center mb-8">
+            <div id="capture-area" class="poster-container flex flex-col relative shrink-0 bg-default">
+                
+                <div id="poster-backdrop" class="absolute inset-0 z-0 opacity-20 bg-cover bg-center transition-all duration-1000 mix-blend-overlay" style="background-image: url('');"></div>
+                
+                <div class="absolute inset-0 z-0 bg-gradient-to-t from-black via-black/50 to-transparent opacity-80"></div>
+
+                <div class="relative z-10 p-8 flex-1 flex flex-col text-white">
+                    <div class="flex justify-between items-center mb-10">
                         <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center font-bold text-white shadow-lg border border-white/20" id="poster-avatar">U</div>
-                            <div><div class="text-sm font-black tracking-wide">EmbyPulse</div><div class="text-[10px] text-gray-300 font-bold uppercase tracking-widest">映 迹 · 洞 察</div></div>
-                        </div>
-                        <div class="px-2 py-1 border border-white/20 rounded text-xs text-gray-300 font-mono" id="poster-user">Guest</div>
-                    </div>
-                    <div class="mb-8">
-                        <div class="text-green-400 text-sm font-bold mb-1 tracking-wider uppercase">专注时长</div>
-                        <div class="text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-300" id="poster-hours">0</div>
-                        <div class="text-sm text-gray-400 mt-2">小时 · 探索光影世界</div>
-                    </div>
-                    <div class="glass-card p-4 grid grid-cols-2 gap-4 rounded-xl mb-6">
-                        <div class="text-center border-r border-white/10"><div class="text-2xl font-bold" id="poster-count">0</div><div class="text-xs text-gray-400 uppercase mt-1">播放次数</div></div>
-                        <div class="text-center"><div class="text-2xl font-bold">Night</div><div class="text-xs text-gray-400 uppercase mt-1">活跃时段</div></div>
-                    </div>
-                    <div class="flex-1">
-                        <div class="text-xs font-bold text-gray-500 uppercase mb-4 tracking-wider">本期最爱 Top 1</div>
-                        <div class="flex gap-4 items-center group">
-                            <div class="w-16 h-24 bg-gray-700 rounded-lg shadow-2xl overflow-hidden shrink-0 border border-white/10 transform group-hover:scale-105 transition"><img id="poster-top-img" src="" class="w-full h-full object-cover opacity-50"></div>
+                            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center font-bold text-xl text-white shadow-lg border-2 border-white/20" id="poster-avatar">
+                                U
+                            </div>
                             <div>
-                                <h4 class="font-bold text-lg leading-tight line-clamp-2" id="poster-top-title">暂无数据</h4>
-                                <div class="text-sm text-gray-400 mt-1"><i class="fa-solid fa-rotate-right text-green-500 mr-1"></i> 播放 <span id="poster-top-count">0</span> 次</div>
+                                <div class="text-base font-black tracking-wide">EmbyPulse</div>
+                                <div class="text-[10px] text-gray-300 font-bold uppercase tracking-[0.2em]">映 迹 · 报 告</div>
+                            </div>
+                        </div>
+                        <div class="px-3 py-1 border border-white/30 rounded-full text-xs text-gray-300 font-mono bg-white/5 backdrop-blur-sm" id="poster-user">Guest</div>
+                    </div>
+
+                    <div class="mb-10">
+                        <div class="text-green-400 text-xs font-bold mb-2 tracking-wider uppercase flex items-center">
+                            <i class="fa-solid fa-clock mr-2"></i> 专注时长
+                        </div>
+                        <div class="flex items-baseline">
+                            <div class="text-7xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400" id="poster-hours">0</div>
+                            <span class="ml-3 text-lg text-gray-400 font-medium">Hours</span>
+                        </div>
+                    </div>
+
+                    <div class="glass-card p-5 grid grid-cols-2 gap-4 rounded-2xl mb-8">
+                        <div class="text-center border-r border-white/10">
+                            <div class="text-3xl font-bold" id="poster-count">0</div>
+                            <div class="text-[10px] text-gray-400 uppercase mt-1 tracking-widest">总播放次数</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-3xl font-bold">2026</div>
+                            <div class="text-[10px] text-gray-400 uppercase mt-1 tracking-widest">年度总结</div>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 flex flex-col justify-center">
+                        <div class="text-xs font-bold text-gray-500 uppercase mb-4 tracking-wider flex items-center">
+                            <i class="fa-solid fa-crown text-yellow-500 mr-2"></i> 年度最爱 Top 1
+                        </div>
+                        <div class="flex gap-5 items-center group bg-white/5 p-4 rounded-xl border border-white/5 hover:bg-white/10 transition">
+                            <div class="w-20 h-32 bg-gray-800 rounded-lg shadow-2xl overflow-hidden shrink-0 border border-white/10 transform group-hover:scale-105 transition duration-500">
+                                <img id="poster-top-img" src="" class="w-full h-full object-cover opacity-50">
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-xl leading-tight line-clamp-2 mb-2" id="poster-top-title">暂无数据</h4>
+                                <div class="text-sm text-gray-400">
+                                    <span class="bg-green-600/20 text-green-400 px-2 py-0.5 rounded text-xs">重温</span>
+                                    <span class="ml-2" id="poster-top-count">0</span> 次播放
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div class="mt-auto border-t border-white/10 pt-4"><p id="poster-msg" class="text-xs text-gray-400 italic">生活不仅有代码，还有电影。</p><div class="mt-2 flex items-center text-[10px] text-gray-500 uppercase tracking-widest"><span class="font-bold text-gray-400 mr-1">EmbyPulse</span> 映迹</div></div>
+
+                    <div class="mt-auto pt-8">
+                        <i class="fa-solid fa-quote-left text-white/20 text-2xl mb-2 block"></i>
+                        <p id="poster-msg" class="text-sm text-gray-300 font-light italic leading-relaxed">生活不仅有代码，还有电影。</p>
+                        <div class="mt-6 flex items-center justify-between border-t border-white/10 pt-4">
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest">
+                                Generated by <span class="font-bold text-gray-400">EmbyPulse</span>
+                            </div>
+                            <div class="w-12 h-12 bg-white p-1 rounded-lg">
+                                <div class="w-full h-full bg-black flex items-center justify-center text-white text-[8px] font-bold">QR</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
 {% endblock %}
+
 {% block scripts %}
 <script>
+    // 经典电影台词库
+    const quotes = [
+        "生活不仅有代码，还有电影。",
+        "有些鸟儿是关不住的，它们的每一片羽毛都闪耀着自由的光辉。",
+        "生活就像一盒巧克力，你永远不知道下一颗是什么味道。",
+        "能力越大，责任越大。",
+        "愿原力与你同在。",
+        "念念不忘，必有回响。",
+        "人一定要有梦想，不然和咸鱼有什么区别？",
+        "以前我没得选，现在我想做一个好人。",
+        "即便是在最黑暗的时候，也可以找到幸福，只要你记得打开灯。",
+        "昨天已成为历史，明天是未知的谜团，而今天是上天赐予的礼物。",
+        "为了看看阳光，我来到这世上。",
+        "我命由我不由天！",
+        "如果再也不能见到你，祝你早安，午安，晚安。",
+        "每一个不曾起舞的日子，都是对生命的辜负。",
+        "我们要学会珍惜，因为不知道哪一次再见，就是最后一次。",
+        "死亡不是生命的终点，遗忘才是。",
+        "风起，唯有努力生存。",
+        "希望是美好的，也许是人间至善，而美好的事物永不消逝。",
+        "不管你是在一英寸一英寸地赢，还是一英里一英里地赢，赢就是赢。",
+        "我不怕千万人阻挡，只怕自己投降。"
+    ];
+
     function resizePoster() {
         if (window.innerWidth < 768) {
             const wrapper = document.getElementById('preview-wrapper');
@@ -79,6 +188,7 @@
     setTimeout(resizePoster, 100);
 
     async function init() { await loadUsers(); }
+
     async function loadUsers() {
         const container = document.getElementById('user-list-container');
         try {
@@ -97,6 +207,7 @@
             }
         } catch (e) { container.innerHTML = 'Error'; }
     }
+
     function selectUser(element, user) {
         document.querySelectorAll('.user-option').forEach(el => { el.classList.remove('selected'); el.classList.remove('bg-green-50'); el.classList.remove('border-green-600'); });
         element.classList.add('selected');
@@ -104,6 +215,7 @@
         document.getElementById('poster-avatar').innerText = user.UserName[0].toUpperCase();
         loadUserData(user.UserId);
     }
+
     async function loadUserData(userId) {
         const resStats = await fetch(`/api/stats/dashboard?user_id=${userId}`);
         const stats = await resStats.json();
@@ -119,14 +231,53 @@
             document.getElementById('poster-top-count').innerText = item.PlayCount;
             const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
             const bgUrl = `/api/proxy/image/${item.ItemId}/backdrop`;
+            
             document.getElementById('poster-top-img').src = imgUrl;
             document.getElementById('poster-top-img').classList.remove('opacity-50');
-            document.getElementById('poster-bg').style.backgroundImage = `url('${bgUrl}')`;
+            // 设置海报的叠加背景图
+            document.getElementById('poster-backdrop').style.backgroundImage = `url('${bgUrl}')`;
+        } else {
+            // 重置
+            document.getElementById('poster-top-title').innerText = "暂无播放";
+            document.getElementById('poster-top-img').classList.add('opacity-50');
+            document.getElementById('poster-backdrop').style.backgroundImage = "";
         }
     }
+
+    // 🎲 随机文案功能
+    function randomQuote() {
+        const randomIndex = Math.floor(Math.random() * quotes.length);
+        const quote = quotes[randomIndex];
+        document.getElementById('custom-msg').value = quote;
+        document.getElementById('poster-msg').innerText = quote;
+    }
+
+    // 🎨 背景切换功能
+    function setBg(el, bgStyle) {
+        // 移除其他激活状态
+        document.querySelectorAll('.bg-option').forEach(opt => opt.classList.remove('active'));
+        el.classList.add('active');
+        
+        // 应用背景
+        document.getElementById('capture-area').style.background = bgStyle;
+    }
+
     function downloadPoster() {
         const node = document.getElementById('capture-area');
         const btn = document.getElementById('dl-btn');
         const originalText = btn.innerHTML;
         const userName = document.getElementById('poster-user').innerText;
-        btn.innerHTML = '
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> 生成中...';
+        
+        html2canvas(node, { scale: 2, useCORS: true, backgroundColor: null }).then(canvas => {
+            const link = document.createElement('a');
+            link.download = `EmbyPulse_Report_${userName}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            btn.innerHTML = originalText;
+        });
+    }
+    
+    init();
+</script>
+{% endblock %}
