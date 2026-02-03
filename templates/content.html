@@ -12,24 +12,37 @@
 
 {% block content %}
 <div class="max-w-7xl mx-auto w-full px-8 py-8">
-    <div class="flex justify-between items-end mb-6">
-        <h1 class="text-2xl font-black text-gray-900">内容风云榜</h1>
-        <button onclick="loadContent()" class="text-sm text-gray-500 hover:text-green-600">
-            <i class="fa-solid fa-rotate-right mr-1"></i> 刷新
-        </button>
+    <div class="flex flex-col md:flex-row justify-between items-end md:items-center mb-8 gap-4">
+        <div>
+            <h1 class="text-2xl font-black text-gray-900">内容风云榜</h1>
+            <p class="text-xs text-gray-500 mt-1">查看大家都在看什么</p>
+        </div>
+        
+        <div class="flex items-center gap-3">
+            <div class="relative">
+                <select id="user-select" onchange="changeUser()" class="appearance-none bg-white border border-gray-200 text-gray-700 py-2 pl-4 pr-10 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm font-medium">
+                    <option value="all">🌏 全服数据</option>
+                    </select>
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+                    <i class="fa-solid fa-chevron-down text-xs"></i>
+                </div>
+            </div>
+
+            <button onclick="refreshCurrent()" class="bg-white border border-gray-200 text-gray-500 hover:text-green-600 w-9 h-9 rounded-lg shadow-sm flex items-center justify-center transition">
+                <i class="fa-solid fa-rotate-right"></i>
+            </button>
+        </div>
     </div>
 
     <div id="loading" class="text-center py-20 text-gray-400">
         <i class="fa-solid fa-circle-notch fa-spin text-3xl"></i>
-        <p class="mt-4 text-sm">正在分析全服数据...</p>
+        <p class="mt-4 text-sm">正在分析数据...</p>
     </div>
 
     <div id="content-area" class="hidden animate-fade-in">
-        
         <div id="hero-section"></div>
-
-        <h3 class="text-xl font-bold text-gray-900 mb-4 mt-10">
-            <i class="fa-solid fa-list-ol text-gray-400 mr-2"></i> 热门榜单 Top 10
+        <h3 class="text-xl font-bold text-gray-900 mb-4 mt-10 flex items-center">
+            <i class="fa-solid fa-fire text-red-500 mr-2"></i> 热门榜单 Top 10
         </h3>
         <div id="list-section" class="grid grid-cols-1 gap-4"></div>
     </div>
@@ -38,62 +51,100 @@
 
 {% block scripts %}
 <script>
-    async function loadContent() {
+    let currentUser = 'all';
+
+    // 初始化
+    async function init() {
+        await loadUsers();
+        loadContent('all');
+    }
+
+    // 1. 加载用户列表
+    async function loadUsers() {
+        try {
+            const res = await fetch('/api/users');
+            const json = await res.json();
+            if(json.status === 'success') {
+                const select = document.getElementById('user-select');
+                json.data.forEach(user => {
+                    const option = document.createElement('option');
+                    option.value = user.UserId;
+                    option.innerText = `👤 ${user.UserName}`;
+                    select.appendChild(option);
+                });
+            }
+        } catch (e) { console.error("Load users failed", e); }
+    }
+
+    // 2. 切换用户
+    function changeUser() {
+        currentUser = document.getElementById('user-select').value;
+        loadContent(currentUser);
+    }
+
+    // 3. 刷新当前
+    function refreshCurrent() {
+        loadContent(currentUser);
+    }
+
+    // 4. 加载内容 (带 user_id 参数)
+    async function loadContent(userId) {
         document.getElementById('loading').classList.remove('hidden');
         document.getElementById('content-area').classList.add('hidden');
 
         try {
-            const response = await fetch('/api/stats/top_movies');
+            // 拼接 URL 参数
+            const url = `/api/stats/top_movies?user_id=${userId}`;
+            const response = await fetch(url);
             const res = await response.json();
             
             if(res.status === 'success' && res.data.length > 0) {
                 const list = res.data;
-                const top1 = list[0];
-                const others = list.slice(1);
-                
-                renderHero(top1);
-                renderList(others);
+                renderHero(list[0]);
+                renderList(list.slice(1));
                 
                 document.getElementById('loading').classList.add('hidden');
                 document.getElementById('content-area').classList.remove('hidden');
             } else {
-                document.getElementById('loading').innerHTML = "<p>暂无播放数据</p>";
+                document.getElementById('loading').innerHTML = `
+                    <div class="py-10">
+                        <i class="fa-solid fa-ghost text-4xl text-gray-200 mb-4"></i>
+                        <p>该用户暂无播放记录</p>
+                    </div>`;
             }
         } catch (e) {
             console.error(e);
-            document.getElementById('loading').innerText = "数据加载失败，请检查后台日志";
+            document.getElementById('loading').innerText = "数据加载失败";
         }
     }
 
-    // 渲染 Top 1
+    // 渲染函数 (保持之前的逻辑，只是接口变聪明了)
     function renderHero(item) {
-        // 🔥 使用后端代理接口获取图片
         const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
         const bgUrl = `/api/proxy/image/${item.ItemId}/backdrop`;
         
         const html = `
         <div class="relative w-full h-80 rounded-3xl overflow-hidden shadow-xl mb-8 bg-gray-900 group">
-            <div class="absolute inset-0 bg-cover bg-center opacity-60 transition duration-700 group-hover:scale-105" 
+            <div class="absolute inset-0 bg-cover bg-center opacity-60 transition duration-1000 group-hover:scale-105" 
                  style="background-image: url('${bgUrl}');"></div>
             <div class="absolute inset-0 hero-mask"></div>
-            
-            <div class="relative z-10 h-full flex items-center px-10">
-                <div class="w-40 h-60 rounded-xl shadow-2xl overflow-hidden border-4 border-white transform rotate-3 transition group-hover:rotate-0 bg-gray-300 shrink-0">
+            <div class="relative z-10 h-full flex items-center px-6 md:px-10">
+                <div class="w-32 h-48 md:w-40 md:h-60 rounded-xl shadow-2xl overflow-hidden border-4 border-white transform rotate-3 transition group-hover:rotate-0 bg-gray-800 shrink-0">
                     <img src="${imgUrl}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/300x450?text=No+Img'">
                 </div>
-                <div class="ml-8 max-w-lg">
-                    <div class="text-yellow-600 font-bold uppercase tracking-wider text-sm mb-1">
-                        <i class="fa-solid fa-crown"></i> 全服冠军
+                <div class="ml-6 md:ml-8 max-w-lg">
+                    <div class="text-yellow-600 font-bold uppercase tracking-wider text-xs md:text-sm mb-1">
+                        <i class="fa-solid fa-crown"></i> 播放冠军
                     </div>
-                    <h2 class="text-4xl font-black text-gray-900 leading-tight mb-4 line-clamp-2">${item.ItemName}</h2>
-                    <div class="flex space-x-8 text-gray-700">
+                    <h2 class="text-2xl md:text-4xl font-black text-gray-900 leading-tight mb-2 md:mb-4 line-clamp-2">${item.ItemName}</h2>
+                    <div class="flex space-x-6 text-gray-700">
                         <div>
-                            <span class="text-3xl font-bold block">${item.PlayCount}</span>
-                            <span class="text-xs text-gray-500 uppercase">播放次数</span>
+                            <span class="text-xl md:text-3xl font-bold block">${item.PlayCount}</span>
+                            <span class="text-xs text-gray-500 uppercase">次播放</span>
                         </div>
                         <div>
-                            <span class="text-3xl font-bold block">${Math.round(item.TotalTime/60)}</span>
-                            <span class="text-xs text-gray-500 uppercase">累计分钟</span>
+                            <span class="text-xl md:text-3xl font-bold block">${Math.round(item.TotalTime/60)}</span>
+                            <span class="text-xs text-gray-500 uppercase">分钟</span>
                         </div>
                     </div>
                 </div>
@@ -102,40 +153,34 @@
         document.getElementById('hero-section').innerHTML = html;
     }
 
-    // 渲染列表
     function renderList(items) {
         let html = '';
         items.forEach((item, index) => {
             const rank = index + 2;
-            // 🔥 使用后端代理接口获取图片
             const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
             
-            let rankColor = "text-gray-300";
-            if(rank === 2) rankColor = "text-gray-400";
-            if(rank === 3) rankColor = "text-amber-700";
+            let rankStyle = "text-gray-300";
+            if(rank === 2) rankStyle = "text-gray-400";
+            if(rank === 3) rankStyle = "text-amber-700";
 
             html += `
-            <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center hover:shadow-md transition group">
-                <div class="w-12 text-center mr-4 text-3xl font-black ${rankColor} italic">${rank}</div>
-                <div class="w-12 h-16 rounded bg-gray-200 overflow-hidden shrink-0 mr-4 shadow-sm">
-                     <img src="${imgUrl}" class="w-full h-full object-cover group-hover:scale-110 transition duration-500" onerror="this.src='https://via.placeholder.com/100x150?text=No'">
+            <div class="bg-white rounded-xl p-3 md:p-4 shadow-sm border border-gray-100 flex items-center hover:shadow-md transition group">
+                <div class="w-8 md:w-12 text-center mr-3 md:mr-4 text-2xl md:text-3xl font-black ${rankStyle} italic">${rank}</div>
+                <div class="w-10 h-14 md:w-12 md:h-16 rounded bg-gray-200 overflow-hidden shrink-0 mr-4 shadow-sm relative">
+                     <img src="${imgUrl}" class="w-full h-full object-cover group-hover:scale-110 transition duration-500">
                 </div>
                 <div class="flex-1 min-w-0">
-                    <h4 class="text-base font-bold text-gray-800 truncate">${item.ItemName}</h4>
-                    <div class="text-xs text-gray-500 mt-1">
-                        <span class="bg-gray-100 px-2 py-0.5 rounded text-gray-600">播放 ${item.PlayCount} 次</span>
-                    </div>
+                    <h4 class="text-sm md:text-base font-bold text-gray-800 truncate">${item.ItemName}</h4>
+                    <div class="text-xs text-gray-500 mt-0.5">播放 ${item.PlayCount} 次</div>
                 </div>
-                <div class="text-right px-4 hidden sm:block">
+                <div class="text-right px-2 hidden sm:block">
                      <div class="text-sm font-bold text-gray-700">${Math.round(item.TotalTime/60)}m</div>
-                     <div class="text-xs text-gray-400">时长</div>
                 </div>
             </div>`;
         });
         document.getElementById('list-section').innerHTML = html;
     }
 
-    // 页面加载即运行
-    loadContent();
+    init();
 </script>
 {% endblock %}
