@@ -1,16 +1,5 @@
 {% extends "layout.html" %}
 {% block title %}数据洞察 - EmbyPulse{% endblock %}
-{% block head %}
-<style>
-    /* 热力图格子 */
-    .heatmap-grid { display: grid; grid-template-rows: repeat(7, 1fr); grid-auto-flow: column; gap: 3px; height: 100px; }
-    .heatmap-cell { width: 10px; height: 10px; border-radius: 2px; background-color: #ebedf0; }
-    .hm-l1 { background-color: #9be9a8; }
-    .hm-l2 { background-color: #40c463; }
-    .hm-l3 { background-color: #30a14e; }
-    .hm-l4 { background-color: #216e39; }
-</style>
-{% endblock %}
 {% block content %}
 <div class="max-w-7xl mx-auto w-full px-4 md:px-8 py-6 pb-20">
     
@@ -43,13 +32,12 @@
                 </div>
             </div>
             
-            <div class="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <h3 class="font-bold text-gray-800 mb-4 text-sm flex items-center justify-between">
-                    <span><i class="fa-solid fa-calendar-days text-green-600 mr-2"></i> 年度观影热力图</span>
-                    <span class="text-xs text-gray-400 font-normal">Less <span class="inline-block w-2 h-2 bg-[#ebedf0] mx-1"></span> <span class="inline-block w-2 h-2 bg-[#216e39] mx-1"></span> More</span>
+            <div class="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                <h3 class="font-bold text-gray-800 mb-4 text-sm flex items-center">
+                    <i class="fa-solid fa-calendar-days text-green-600 mr-2"></i> 过去 12 个月观影趋势
                 </h3>
-                <div class="overflow-x-auto pb-2">
-                    <div id="heatmap-container" class="heatmap-grid min-w-max"></div>
+                <div class="relative h-48 w-full">
+                    <canvas id="monthlyChart"></canvas>
                 </div>
             </div>
         </div>
@@ -89,7 +77,7 @@
         await loadUsers();
         loadData('all');
         loadBadges('all');
-        loadHeatmap('all');
+        loadMonthly('all');
     }
 
     async function loadUsers() {
@@ -112,7 +100,7 @@
         const userId = document.getElementById('user-select').value;
         loadData(userId);
         loadBadges(userId);
-        loadHeatmap(userId);
+        loadMonthly(userId);
     }
 
     async function loadBadges(userId) {
@@ -135,37 +123,45 @@
                     </div>`;
                 });
                 container.innerHTML = html;
-            } else {
-                container.innerHTML = '<p class="text-xs text-gray-400">暂无特殊成就，继续观看以解锁！</p>';
-            }
+            } else { container.innerHTML = '<p class="text-xs text-gray-400">暂无特殊成就，继续观看以解锁！</p>'; }
         } catch(e) {}
     }
 
-    async function loadHeatmap(userId) {
-        const container = document.getElementById('heatmap-container');
+    // 🔥 加载新的月度柱状图
+    async function loadMonthly(userId) {
+        const ctx = document.getElementById('monthlyChart').getContext('2d');
         try {
-            const res = await fetch(`/api/stats/heatmap?user_id=${userId}`);
+            const res = await fetch(`/api/stats/monthly_stats?user_id=${userId}`);
             const json = await res.json();
             const data = json.data || {};
             
-            // 生成过去365天
-            let html = '';
-            const today = new Date();
-            for(let i=364; i>=0; i--) {
-                const d = new Date();
-                d.setDate(today.getDate() - i);
-                const key = d.toISOString().split('T')[0];
-                const count = data[key] || 0;
-                
-                let cls = 'heatmap-cell';
-                if(count > 0) cls += ' hm-l1';
-                if(count > 1800) cls += ' hm-l2'; // 30min
-                if(count > 7200) cls += ' hm-l3'; // 2h
-                if(count > 14400) cls += ' hm-l4'; // 4h
-                
-                html += `<div class="${cls}" title="${key}: ${Math.round(count/60)} mins"></div>`;
-            }
-            container.innerHTML = html;
+            const labels = Object.keys(data);
+            const values = Object.values(data).map(v => Math.round(v/3600)); // 转小时
+
+            if(charts.monthly) charts.monthly.destroy();
+
+            charts.monthly = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '观看时长 (小时)',
+                        data: values,
+                        backgroundColor: 'rgba(16, 185, 129, 0.6)',
+                        borderRadius: 6,
+                        barThickness: 20
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { grid: {display: false} },
+                        y: { beginAtZero: true, grid: {borderDash: [2, 4]} }
+                    },
+                    plugins: { legend: {display: false} }
+                }
+            });
         } catch(e) {}
     }
 
@@ -202,9 +198,7 @@
     function renderDeviceChart(dataList) {
         const ctx = document.getElementById('deviceChart').getContext('2d');
         let labels = [], values = [], others = 0;
-        dataList.forEach((d, i) => {
-            if(i < 5) { labels.push(d.Device); values.push(d.Plays); } else { others += d.Plays; }
-        });
+        dataList.forEach((d, i) => { if(i < 5) { labels.push(d.Device); values.push(d.Plays); } else { others += d.Plays; } });
         if(others > 0) { labels.push('其他'); values.push(others); }
         if(charts.device) charts.device.destroy();
         charts.device = new Chart(ctx, {

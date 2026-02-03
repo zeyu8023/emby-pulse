@@ -2,7 +2,6 @@ import sqlite3
 import os
 import uvicorn
 import requests
-import datetime
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -60,7 +59,7 @@ async def page_report(request: Request): return templates.TemplateResponse("repo
 @app.get("/details")
 async def page_details(request: Request): return templates.TemplateResponse("details.html", {"request": request, "active_page": "details"})
 
-# === 基础 API ===
+# === API ===
 @app.get("/api/users")
 async def api_get_users():
     try:
@@ -96,11 +95,14 @@ async def api_recent_activity(user_id: Optional[str] = None):
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
+        # 查 300 条
         results = query_db(f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType, PlayDuration FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 300", params)
         if not results: return {"status": "success", "data": []}
+
         raw_items = [dict(row) for row in results]
         user_map = get_user_map()
         metadata_map = {}
+        
         if EMBY_API_KEY:
             all_ids = [i['ItemId'] for i in raw_items][:100]
             chunk_size = 20
@@ -112,24 +114,38 @@ async def api_recent_activity(user_id: Optional[str] = None):
                     if res.status_code == 200:
                         for m in res.json().get('Items', []): metadata_map[m['Id']] = m
                 except: pass
-        final_data, seen_keys = [], set()
+
+        final_data = []
+        seen_keys = set() 
         for item in raw_items:
             item['UserName'] = user_map.get(item['UserId'], "Unknown")
-            display_id, display_title, unique_key = item['ItemId'], item['ItemName'], item['ItemName']
+            display_id = item['ItemId']
+            display_title = item['ItemName']
+            unique_key = item['ItemName']
             meta = metadata_map.get(item['ItemId'])
+            
             if meta:
                 if meta.get('Type') == 'Episode':
                     if meta.get('SeriesId'):
-                        display_id, unique_key = meta.get('SeriesId'), meta.get('SeriesId')
+                        display_id = meta.get('SeriesId')
+                        unique_key = meta.get('SeriesId')
                         if meta.get('SeriesName'): display_title = meta.get('SeriesName')
-            elif ' - ' in item['ItemName']: display_title = item['ItemName'].split(' - ')[0]; unique_key = display_title
+            elif ' - ' in item['ItemName']:
+                 display_title = item['ItemName'].split(' - ')[0]
+                 unique_key = display_title
+
             if unique_key not in seen_keys:
-                seen_keys.add(unique_key); item['DisplayId'] = display_id; item['DisplayTitle'] = display_title; final_data.append(item)
-            if len(final_data) >= 50: break 
+                seen_keys.add(unique_key)
+                item['DisplayId'] = display_id
+                item['DisplayTitle'] = display_title
+                final_data.append(item)
+            
+            # 🔥🔥 严格限制 20 个 🔥🔥
+            if len(final_data) >= 20: break 
+                
         return {"status": "success", "data": final_data}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-# === 🔥 1. 实时监控 API (Live Now) ===
 @app.get("/api/live")
 async def api_live_sessions():
     if not EMBY_API_KEY: return {"status": "error", "message": "No API Key"}
@@ -137,10 +153,8 @@ async def api_live_sessions():
         url = f"{EMBY_HOST}/emby/Sessions?api_key={EMBY_API_KEY}"
         res = requests.get(url, timeout=3)
         if res.status_code != 200: return {"status": "error", "data": []}
-        
         sessions = []
         for s in res.json():
-            # 只显示正在播放的 (NowPlayingItem 存在)
             if s.get("NowPlayingItem"):
                 info = {
                     "User": s.get("UserName", "Guest"),
@@ -149,8 +163,6 @@ async def api_live_sessions():
                     "ItemName": s["NowPlayingItem"].get("Name"),
                     "SeriesName": s["NowPlayingItem"].get("SeriesName", ""),
                     "ItemId": s["NowPlayingItem"].get("Id"),
-                    "Type": s["NowPlayingItem"].get("Type"),
-                    # 判断转码: PlayState.PlayMethod == 'Transcode'
                     "IsTranscoding": s.get("PlayState", {}).get("PlayMethod") == "Transcode",
                     "Percentage": int((s.get("PlayState", {}).get("PositionTicks", 0) / (s["NowPlayingItem"].get("RunTimeTicks", 1) or 1)) * 100)
                 }
@@ -158,67 +170,52 @@ async def api_live_sessions():
         return {"status": "success", "data": sessions}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-# === 🔥 2. 热力图 API (Heatmap) ===
-@app.get("/api/stats/heatmap")
-async def api_heatmap(user_id: Optional[str] = None):
+# === 🔥 替换原热力图接口 -> 月度统计 ===
+@app.get("/api/stats/monthly_stats")
+async def api_monthly_stats(user_id: Optional[str] = None):
     try:
-        where, params = "WHERE DateCreated > date('now', '-365 days')", []
+        where, params = "WHERE DateCreated > date('now', '-12 months')", []
         if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
         
+        # 按月分组: YYYY-MM
         sql = f"""
-        SELECT date(DateCreated) as Day, SUM(PlayDuration) as Duration 
-        FROM PlaybackActivity {where} GROUP BY Day
+        SELECT strftime('%Y-%m', DateCreated) as Month, SUM(PlayDuration) as Duration 
+        FROM PlaybackActivity {where} GROUP BY Month ORDER BY Month
         """
         results = query_db(sql, params)
         data = {}
         if results:
             for r in results:
-                # 转为秒 (JS处理更方便)
-                data[r['Day']] = int(r['Duration'])
+                data[r['Month']] = int(r['Duration'])
         return {"status": "success", "data": data}
     except: return {"status": "error", "data": {}}
 
-# === 🔥 3. 勋章 API (Badges) ===
 @app.get("/api/stats/badges")
 async def api_badges(user_id: Optional[str] = None):
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
-        
         badges = []
-        
-        # 1. 修仙党: 深夜 2-5 点观看次数
         night_sql = f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND strftime('%H', DateCreated) BETWEEN '02' AND '05'"
         night_res = query_db(night_sql, params)
         if night_res and night_res[0]['c'] > 5:
             badges.append({"id": "night", "name": "修仙党", "icon": "fa-moon", "color": "text-purple-500", "bg": "bg-purple-100", "desc": "深夜是灵魂最自由的时刻"})
-
-        # 2. 手机党: 移动设备占比
         mobile_sql = f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND (DeviceName LIKE '%iPhone%' OR DeviceName LIKE '%Android%' OR ClientName LIKE '%Mobile%')"
         total_sql = f"SELECT COUNT(*) as c FROM PlaybackActivity {where}"
         mob_res = query_db(mobile_sql, params)
         tot_res = query_db(total_sql, params)
         if tot_res and tot_res[0]['c'] > 10 and mob_res and (mob_res[0]['c'] / tot_res[0]['c'] > 0.5):
             badges.append({"id": "mobile", "name": "手机党", "icon": "fa-mobile-screen", "color": "text-blue-500", "bg": "bg-blue-100", "desc": "走到哪看到哪"})
-
-        # 3. 肝帝: 总时长 > 100小时 (360000秒)
         dur_sql = f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {where}"
         dur_res = query_db(dur_sql, params)
         if dur_res and dur_res[0]['c'] and dur_res[0]['c'] > 360000:
             badges.append({"id": "king", "name": "影视肝帝", "icon": "fa-crown", "color": "text-yellow-600", "bg": "bg-yellow-100", "desc": "阅片量惊人"})
-
-        # 4. 忠实粉: 活跃天数 > 30
         days_sql = f"SELECT COUNT(DISTINCT date(DateCreated)) as c FROM PlaybackActivity {where}"
         days_res = query_db(days_sql, params)
         if days_res and days_res[0]['c'] > 30:
             badges.append({"id": "loyal", "name": "忠实观众", "icon": "fa-heart", "color": "text-red-500", "bg": "bg-red-100", "desc": "Emby 也是一种生活方式"})
-
         return {"status": "success", "data": badges}
     except: return {"status": "success", "data": []}
-
-# ... (api_top_users_list, api_top_movies, user_details 保持不变, 为了篇幅省略, 请保留原有的!) ...
-# ... (记得保留 api_top_users_list, api_top_movies 和 api_user_details 接口) ...
-# 为了确保代码完整，这里补上这几个接口，防止你直接覆盖后丢失
 
 @app.get("/api/stats/top_users_list")
 async def api_top_users_list():
