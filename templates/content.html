@@ -7,28 +7,33 @@
     .hero-mask { 
         background: linear-gradient(to right, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.8) 40%, rgba(255,255,255,0) 100%); 
     }
+    /* 强制下拉菜单样式，防止被遮挡 */
+    #user-select {
+        background-color: white;
+        cursor: pointer;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto w-full px-8 py-8">
-    <div class="flex flex-col md:flex-row justify-between items-end md:items-center mb-8 gap-4">
+<div class="max-w-7xl mx-auto w-full px-8 py-8 relative">
+    <div class="flex flex-col md:flex-row justify-between items-end md:items-center mb-8 gap-4 relative z-40">
         <div>
             <h1 class="text-2xl font-black text-gray-900">内容风云榜</h1>
             <p class="text-xs text-gray-500 mt-1">查看大家都在看什么</p>
         </div>
         
         <div class="flex items-center gap-3">
-            <div class="relative">
-                <select id="user-select" onchange="changeUser()" class="appearance-none bg-white border border-gray-200 text-gray-700 py-2 pl-4 pr-10 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm font-medium">
+            <div class="relative z-50">
+                <select id="user-select" onchange="changeUser()" class="appearance-none bg-white border border-gray-300 text-gray-800 py-2 pl-4 pr-10 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm font-bold min-w-[150px]">
                     <option value="all">🌏 全服数据</option>
                     </select>
-                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-600">
                     <i class="fa-solid fa-chevron-down text-xs"></i>
                 </div>
             </div>
 
-            <button onclick="refreshCurrent()" class="bg-white border border-gray-200 text-gray-500 hover:text-green-600 w-9 h-9 rounded-lg shadow-sm flex items-center justify-center transition">
+            <button onclick="refreshCurrent()" class="bg-white border border-gray-300 text-gray-600 hover:text-green-600 w-9 h-9 rounded-lg shadow-sm flex items-center justify-center transition hover:bg-gray-50 z-50">
                 <i class="fa-solid fa-rotate-right"></i>
             </button>
         </div>
@@ -53,47 +58,53 @@
 <script>
     let currentUser = 'all';
 
-    // 初始化
     async function init() {
         await loadUsers();
         loadContent('all');
     }
 
-    // 1. 加载用户列表
+    // 加载用户
     async function loadUsers() {
         try {
+            console.log("正在加载用户列表...");
             const res = await fetch('/api/users');
             const json = await res.json();
-            if(json.status === 'success') {
-                const select = document.getElementById('user-select');
+            
+            const select = document.getElementById('user-select');
+            // 清空除第一项外的选项
+            select.innerHTML = '<option value="all">🌏 全服数据</option>';
+
+            if(json.status === 'success' && json.data.length > 0) {
+                console.log(`加载成功，共 ${json.data.length} 个用户`);
                 json.data.forEach(user => {
                     const option = document.createElement('option');
                     option.value = user.UserId;
                     option.innerText = `👤 ${user.UserName}`;
                     select.appendChild(option);
                 });
+            } else {
+                console.warn("没有找到用户数据", json);
             }
-        } catch (e) { console.error("Load users failed", e); }
+        } catch (e) { 
+            console.error("User Load Error:", e); 
+        }
     }
 
-    // 2. 切换用户
     function changeUser() {
         currentUser = document.getElementById('user-select').value;
+        console.log("切换用户:", currentUser);
         loadContent(currentUser);
     }
 
-    // 3. 刷新当前
     function refreshCurrent() {
         loadContent(currentUser);
     }
 
-    // 4. 加载内容 (带 user_id 参数)
     async function loadContent(userId) {
         document.getElementById('loading').classList.remove('hidden');
         document.getElementById('content-area').classList.add('hidden');
 
         try {
-            // 拼接 URL 参数
             const url = `/api/stats/top_movies?user_id=${userId}`;
             const response = await fetch(url);
             const res = await response.json();
@@ -109,8 +120,10 @@
                 document.getElementById('loading').innerHTML = `
                     <div class="py-10">
                         <i class="fa-solid fa-ghost text-4xl text-gray-200 mb-4"></i>
-                        <p>该用户暂无播放记录</p>
+                        <p>该用户在此期间暂无播放记录</p>
                     </div>`;
+                // 也要隐藏内容区，防止残留
+                document.getElementById('content-area').classList.add('hidden');
             }
         } catch (e) {
             console.error(e);
@@ -118,7 +131,6 @@
         }
     }
 
-    // 渲染函数 (保持之前的逻辑，只是接口变聪明了)
     function renderHero(item) {
         const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
         const bgUrl = `/api/proxy/image/${item.ItemId}/backdrop`;
