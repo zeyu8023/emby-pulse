@@ -14,6 +14,7 @@ PORT = 10307
 DB_PATH = os.getenv("DB_PATH", "/emby-data/playback_reporting.db")
 EMBY_HOST = os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/')
 EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip()
+FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
 print(f"--- EmbyPulse 启动 ---")
 print(f"DB: {DB_PATH}")
@@ -56,7 +57,7 @@ async def page_content(request: Request): return templates.TemplateResponse("con
 @app.get("/report")
 async def page_report(request: Request): return templates.TemplateResponse("report.html", {"request": request, "active_page": "report"})
 
-# === API ===
+# === API: 用户列表 ===
 @app.get("/api/users")
 async def api_get_users():
     try:
@@ -72,6 +73,7 @@ async def api_get_users():
         return {"status": "success", "data": data}
     except Exception as e: return {"status": "error", "message": str(e)}
 
+# === API: 仪表盘 ===
 @app.get("/api/stats/dashboard")
 async def api_dashboard(user_id: Optional[str] = None):
     try:
@@ -87,13 +89,13 @@ async def api_dashboard(user_id: Optional[str] = None):
         }}
     except Exception as e: return {"status": "error", "message": str(e)}
 
+# === API: 最近播放 ===
 @app.get("/api/stats/recent")
 async def api_recent_activity(user_id: Optional[str] = None):
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
         
-        # 查 300 条以供去重
         results = query_db(f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType, PlayDuration FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 300", params)
         if not results: return {"status": "success", "data": []}
 
@@ -137,13 +139,11 @@ async def api_recent_activity(user_id: Optional[str] = None):
                 item['DisplayId'] = display_id
                 item['DisplayTitle'] = display_title
                 final_data.append(item)
-            
-            # 🔥 修改点：增加返回数量到 50，给前端足够的“备胎”来替换裂图
             if len(final_data) >= 50: break 
-                
         return {"status": "success", "data": final_data}
     except Exception as e: return {"status": "error", "message": str(e)}
 
+# === API: 用户排行 ===
 @app.get("/api/stats/top_users_list")
 async def api_top_users_list():
     try:
@@ -158,15 +158,56 @@ async def api_top_users_list():
         return {"status": "success", "data": data}
     except: return {"status": "success", "data": []}
 
+# === 🔥 升级版 API: 内容风云榜 (支持分类和排序) ===
 @app.get("/api/stats/top_movies")
-async def api_top_movies(user_id: Optional[str] = None):
+async def api_top_movies(
+    user_id: Optional[str] = None, 
+    category: str = 'all',  # all, Movie, Episode
+    sort_by: str = 'count'  # count, duration
+):
     try:
-        where, params = "WHERE 1=1", []
-        if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
-        res = query_db(f"SELECT ItemName, ItemId, COUNT(*) as PlayCount, SUM(PlayDuration) as TotalTime FROM PlaybackActivity {where} GROUP BY ItemId, ItemName ORDER BY PlayCount DESC LIMIT 10", params)
-        return {"status": "success", "data": [dict(r) for r in res] if res else []}
-    except: return {"status": "success", "data": []}
+        where = "WHERE 1=1"
+        params = []
+        
+        # 1. 用户过滤
+        if user_id and user_id != 'all': 
+            where += " AND UserId = ?"
+            params.append(user_id)
+            
+        # 2. 分类过滤 (关键升级)
+        if category == 'Movie':
+            where += " AND ItemType = 'Movie'"
+        elif category == 'Episode':
+            where += " AND ItemType = 'Episode'"
+            
+        # 3. 排序逻辑
+        order_clause = "ORDER BY PlayCount DESC"
+        if sort_by == 'duration':
+            order_clause = "ORDER BY TotalTime DESC"
+            
+        sql = f"""
+        SELECT ItemName, ItemId, ItemType, COUNT(*) as PlayCount, SUM(PlayDuration) as TotalTime
+        FROM PlaybackActivity
+        {where}
+        GROUP BY ItemId, ItemName
+        {order_clause}
+        LIMIT 20
+        """
+        
+        results = query_db(sql, params)
+        if not results: return {"status": "success", "data": []}
+        
+        # 数据处理：如果是剧集，尝试获取 SeriesId 以合并封面
+        # (注：SQL层面的合并比较复杂，这里先做简单的ID聚合，封面逻辑交给前端代理)
+        data = []
+        for row in results:
+            data.append(dict(row))
+            
+        return {"status": "success", "data": data}
+    except Exception as e: 
+        return {"status": "error", "message": str(e)}
 
+# === API: 图片代理 ===
 @app.get("/api/proxy/image/{item_id}/{img_type}")
 async def proxy_image(item_id: str, img_type: str):
     target_id = item_id
@@ -199,7 +240,7 @@ async def proxy_image(item_id: str, img_type: str):
                 return Response(content=fallback_resp.content, media_type=fallback_resp.headers.get("Content-Type", "image/jpeg"))
     except: pass
     
-    return Response(status_code=404)
+    return RedirectResponse(FALLBACK_IMAGE_URL)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT)

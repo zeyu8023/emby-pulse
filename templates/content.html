@@ -2,50 +2,92 @@
 {% block title %}内容风云榜 - EmbyPulse{% endblock %}
 {% block head %}
 <style>
-    .hero-mask { background: linear-gradient(to bottom, transparent 0%, rgba(255,255,255,1) 90%); }
-    @media (min-width: 768px) {
-        .hero-mask { background: linear-gradient(to right, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.8) 40%, rgba(255,255,255,0) 100%); }
-    }
+    .podium-card { transition: all 0.3s ease; }
+    .podium-card:hover { transform: translateY(-10px); }
+    /* 金银铜配色 */
+    .rank-1-border { border-color: #f59e0b; box-shadow: 0 10px 30px -10px rgba(245, 158, 11, 0.5); }
+    .rank-2-border { border-color: #94a3b8; box-shadow: 0 10px 30px -10px rgba(148, 163, 184, 0.5); }
+    .rank-3-border { border-color: #b45309; box-shadow: 0 10px 30px -10px rgba(180, 83, 9, 0.5); }
+    
+    .crown-icon { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); font-size: 2rem; color: #f59e0b; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2)); z-index: 10; }
 </style>
 {% endblock %}
 {% block content %}
-<div class="max-w-7xl mx-auto w-full px-4 md:px-8 py-6 md:py-8 relative pb-20">
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4 relative z-30">
+<div class="max-w-7xl mx-auto w-full px-4 md:px-8 py-6 pb-20">
+    
+    <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div>
-            <h1 class="text-2xl font-black text-gray-900">内容风云榜</h1>
-            <p class="text-xs text-gray-500 mt-1">服务器最热播</p>
+            <h1 class="text-2xl font-black text-gray-900">风云榜</h1>
+            <p class="text-xs text-gray-500 mt-1">服务器最受欢迎的内容</p>
         </div>
-        <div class="flex items-center gap-3 w-full md:w-auto">
-            <div class="relative z-40 flex-1 md:flex-none">
-                <select id="user-select" onchange="changeUser()" class="w-full md:w-auto appearance-none bg-white border border-gray-300 text-gray-800 py-2 pl-4 pr-10 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold">
-                    <option value="all">🌏 全服数据</option>
-                </select>
-                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-600"><i class="fa-solid fa-chevron-down text-xs"></i></div>
-            </div>
-            <button onclick="refreshCurrent()" class="bg-white border border-gray-300 text-gray-600 w-10 h-10 rounded-lg shadow-sm flex items-center justify-center"><i class="fa-solid fa-rotate-right"></i></button>
+        
+        <div class="flex flex-wrap items-center gap-3 bg-white p-1.5 rounded-xl shadow-sm border border-gray-100">
+            <button onclick="setCategory('all')" class="cat-btn px-4 py-1.5 rounded-lg text-sm font-bold transition bg-gray-100 text-gray-800" data-cat="all">全部</button>
+            <button onclick="setCategory('Movie')" class="cat-btn px-4 py-1.5 rounded-lg text-sm font-bold transition text-gray-500 hover:bg-gray-50" data-cat="Movie">电影</button>
+            <button onclick="setCategory('Episode')" class="cat-btn px-4 py-1.5 rounded-lg text-sm font-bold transition text-gray-500 hover:bg-gray-50" data-cat="Episode">剧集</button>
+            
+            <div class="w-px h-6 bg-gray-200 mx-1"></div>
+            
+            <select id="user-select" onchange="changeUser()" class="bg-transparent text-sm font-bold text-gray-600 focus:outline-none cursor-pointer">
+                <option value="all">🌏 全服</option>
+            </select>
         </div>
     </div>
 
-    <div id="loading" class="text-center py-20 text-gray-400"><i class="fa-solid fa-circle-notch fa-spin text-3xl"></i><p class="mt-4 text-sm">加载中...</p></div>
+    <div id="loading" class="text-center py-20 text-gray-400">
+        <i class="fa-solid fa-circle-notch fa-spin text-3xl"></i>
+    </div>
 
-    <div id="content-area" class="hidden animate-fade-in">
-        <div id="hero-section"></div>
-        <h3 class="text-lg font-bold text-gray-900 mb-4 mt-8 flex items-center"><i class="fa-solid fa-fire text-red-500 mr-2"></i> 热门榜单 Top 10</h3>
-        <div id="list-section" class="grid grid-cols-1 gap-3"></div>
+    <div id="content-area" class="hidden animate-fade-in space-y-12">
+        
+        <div class="flex flex-col md:flex-row items-end justify-center gap-4 md:gap-8 px-4" id="podium-section">
+            </div>
+
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden max-w-4xl mx-auto">
+            <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                <h3 class="font-bold text-gray-700">其余上榜名单</h3>
+                <span class="text-xs text-gray-400">Top 4 - 20</span>
+            </div>
+            <div id="list-section" class="divide-y divide-gray-50">
+                </div>
+        </div>
     </div>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
-    /* JS 代码保持不变 (复用之前的逻辑) */
-    let currentUser = 'all';
-    async function init() { await loadUsers(); loadContent('all'); }
+    let state = {
+        user: 'all',
+        category: 'all',
+        sortBy: 'count'
+    };
+
+    async function init() {
+        await loadUsers();
+        loadContent();
+    }
+
+    // 切换分类
+    function setCategory(cat) {
+        state.category = cat;
+        // 更新按钮样式
+        document.querySelectorAll('.cat-btn').forEach(btn => {
+            if(btn.dataset.cat === cat) {
+                btn.classList.add('bg-gray-100', 'text-gray-800');
+                btn.classList.remove('text-gray-500');
+            } else {
+                btn.classList.remove('bg-gray-100', 'text-gray-800');
+                btn.classList.add('text-gray-500');
+            }
+        });
+        loadContent();
+    }
+
     async function loadUsers() {
         try {
             const res = await fetch('/api/users');
             const json = await res.json();
             const select = document.getElementById('user-select');
-            select.innerHTML = '<option value="all">🌏 全服数据</option>';
             if(json.status === 'success') {
                 json.data.forEach(user => {
                     const option = document.createElement('option');
@@ -56,68 +98,119 @@
             }
         } catch (e) { console.error(e); }
     }
-    function changeUser() { currentUser = document.getElementById('user-select').value; loadContent(currentUser); }
-    function refreshCurrent() { loadContent(currentUser); }
-    async function loadContent(userId) {
-        document.getElementById('loading').classList.remove('hidden');
-        document.getElementById('content-area').classList.add('hidden');
-        try {
-            const res = await fetch(`/api/stats/top_movies?user_id=${userId}`);
-            const json = await res.json();
-            if(json.status === 'success' && json.data.length > 0) {
-                renderHero(json.data[0]);
-                renderList(json.data.slice(1));
-                document.getElementById('loading').classList.add('hidden');
-                document.getElementById('content-area').classList.remove('hidden');
-            } else {
-                document.getElementById('loading').innerHTML = `<div class="py-10"><i class="fa-solid fa-ghost text-4xl text-gray-200 mb-4"></i><p>无记录</p></div>`;
-            }
-        } catch (e) { console.error(e); }
-    }
-    
-    // 渲染 Hero: 手机端样式调整
-    function renderHero(item) {
-        const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
-        const bgUrl = `/api/proxy/image/${item.ItemId}/backdrop`;
-        document.getElementById('hero-section').innerHTML = `
-        <div class="relative w-full h-[28rem] md:h-80 rounded-2xl md:rounded-3xl overflow-hidden shadow-xl bg-gray-900 group">
-            <div class="absolute inset-0 bg-cover bg-center opacity-60 transition duration-1000 group-hover:scale-105" style="background-image: url('${bgUrl}');"></div>
-            <div class="absolute inset-0 hero-mask"></div>
-            <div class="relative z-10 h-full flex flex-col md:flex-row items-center md:px-10 justify-end md:justify-start pb-8 md:pb-0">
-                <div class="w-32 h-48 md:w-40 md:h-60 rounded-xl shadow-2xl overflow-hidden border-2 md:border-4 border-white transform rotate-3 transition group-hover:rotate-0 bg-gray-800 shrink-0 mb-4 md:mb-0">
-                    <img src="${imgUrl}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/300x450?text=No+Img'">
-                </div>
-                <div class="px-6 md:ml-8 text-center md:text-left max-w-lg">
-                    <div class="text-yellow-600 font-bold uppercase tracking-wider text-xs md:text-sm mb-1"><i class="fa-solid fa-crown"></i> 播放冠军</div>
-                    <h2 class="text-2xl md:text-4xl font-black text-gray-900 leading-tight mb-3 line-clamp-2">${item.ItemName}</h2>
-                    <div class="flex justify-center md:justify-start space-x-6 text-gray-700">
-                        <div><span class="text-xl md:text-3xl font-bold block">${item.PlayCount}</span><span class="text-xs text-gray-500 uppercase">次播放</span></div>
-                        <div><span class="text-xl md:text-3xl font-bold block">${Math.round(item.TotalTime/60)}</span><span class="text-xs text-gray-500 uppercase">分钟</span></div>
-                    </div>
-                </div>
-            </div>
-        </div>`;
+
+    function changeUser() {
+        state.user = document.getElementById('user-select').value;
+        loadContent();
     }
 
-    function renderList(items) {
+    async function loadContent() {
+        const loading = document.getElementById('loading');
+        const content = document.getElementById('content-area');
+        
+        loading.classList.remove('hidden');
+        content.classList.add('hidden');
+
+        try {
+            // 请求带参数的 API
+            const url = `/api/stats/top_movies?user_id=${state.user}&category=${state.category}&sort_by=${state.sortBy}`;
+            const res = await fetch(url);
+            const json = await res.json();
+            
+            if(json.status === 'success' && json.data.length > 0) {
+                const list = json.data;
+                
+                // 拆分前三名和其余
+                // 这里的顺序是 1, 2, 3...
+                // 领奖台显示顺序要是: 2, 1, 3
+                const top3 = [];
+                if(list[1]) top3.push({...list[1], rank: 2}); // 左边放第二名
+                if(list[0]) top3.push({...list[0], rank: 1}); // 中间放第一名
+                if(list[2]) top3.push({...list[2], rank: 3}); // 右边放第三名
+                
+                const others = list.slice(3); // 第4名以后
+
+                renderPodium(top3);
+                renderList(others);
+                
+                loading.classList.add('hidden');
+                content.classList.remove('hidden');
+            } else {
+                loading.innerHTML = `<div class="py-10"><i class="fa-solid fa-ghost text-4xl text-gray-200 mb-4"></i><p>暂无数据</p></div>`;
+            }
+        } catch (e) {
+            console.error(e);
+            loading.innerText = "Error loading data";
+        }
+    }
+
+    function renderPodium(items) {
+        const container = document.getElementById('podium-section');
         let html = '';
-        items.forEach((item, index) => {
-            const rank = index + 2;
+        
+        items.forEach(item => {
             const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
+            const isFirst = item.rank === 1;
+            
+            // 样式根据排名不同
+            let heightClass = isFirst ? 'h-64 md:h-80 w-full md:w-64' : 'h-48 md:h-60 w-full md:w-48';
+            let borderClass = `rank-${item.rank}-border`;
+            let crownHtml = isFirst ? '<i class="fa-solid fa-crown crown-icon animate-bounce"></i>' : '';
+            let rankBadgeColor = isFirst ? 'bg-yellow-500' : (item.rank === 2 ? 'bg-gray-400' : 'bg-amber-600');
+            
             html += `
-            <div class="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex items-center hover:shadow-md transition">
-                <div class="w-8 text-center mr-3 text-xl font-black ${rank <= 3 ? 'text-amber-700' : 'text-gray-300'} italic">${rank}</div>
-                <div class="w-10 h-14 rounded bg-gray-200 overflow-hidden shrink-0 mr-3 shadow-sm relative">
-                     <img src="${imgUrl}" class="w-full h-full object-cover">
-                </div>
-                <div class="flex-1 min-w-0">
-                    <h4 class="text-sm font-bold text-gray-800 truncate">${item.ItemName}</h4>
-                    <div class="text-xs text-gray-500 mt-0.5">播放 ${item.PlayCount} 次</div>
+            <div class="podium-card relative flex flex-col items-center group ${isFirst ? 'order-1 md:-mt-12 z-10' : 'order-2'}">
+                ${crownHtml}
+                <div class="relative rounded-2xl overflow-hidden border-4 ${borderClass} ${heightClass} bg-gray-800 shadow-xl">
+                    <img src="${imgUrl}" class="w-full h-full object-cover group-hover:scale-110 transition duration-700"
+                         onerror="this.src='https://via.placeholder.com/300x450/374151/9ca3af?text=No+Cover'">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
+                    
+                    <div class="absolute bottom-0 left-0 right-0 p-4 text-center">
+                        <div class="inline-block ${rankBadgeColor} text-white text-xs font-bold px-2 py-0.5 rounded-full mb-2">#${item.rank}</div>
+                        <h3 class="text-white font-bold text-sm md:text-lg line-clamp-1 leading-tight">${item.ItemName}</h3>
+                        <p class="text-gray-300 text-xs mt-1">${item.PlayCount} 次播放</p>
+                    </div>
                 </div>
             </div>`;
         });
-        document.getElementById('list-section').innerHTML = html;
+        container.innerHTML = html;
     }
+
+    function renderList(items) {
+        const container = document.getElementById('list-section');
+        if(items.length === 0) {
+            container.innerHTML = '<div class="p-8 text-center text-gray-400 text-sm">暂无更多排名</div>';
+            return;
+        }
+
+        let html = '';
+        items.forEach((item, index) => {
+            const rank = index + 4;
+            const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
+            
+            html += `
+            <div class="flex items-center p-4 hover:bg-gray-50 transition group">
+                <div class="w-8 text-center font-bold text-gray-400 text-lg mr-4 italic">#${rank}</div>
+                <div class="w-10 h-14 rounded bg-gray-200 overflow-hidden shrink-0 mr-4 shadow-sm relative">
+                     <img src="${imgUrl}" class="w-full h-full object-cover group-hover:scale-105 transition"
+                          onerror="this.src='https://via.placeholder.com/100x150/e5e7eb/9ca3af?text=No'">
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h4 class="text-sm font-bold text-gray-800 truncate group-hover:text-green-600 transition">${item.ItemName}</h4>
+                    <div class="text-xs text-gray-500 mt-0.5 flex items-center gap-3">
+                        <span><i class="fa-solid fa-play text-gray-300 mr-1"></i>${item.PlayCount}</span>
+                        <span><i class="fa-regular fa-clock text-gray-300 mr-1"></i>${Math.round(item.TotalTime/60)}m</span>
+                    </div>
+                </div>
+                <div class="text-right hidden sm:block">
+                     <div class="text-xs font-bold text-gray-400 px-2 py-1 bg-gray-100 rounded">${item.ItemType || 'Media'}</div>
+                </div>
+            </div>`;
+        });
+        container.innerHTML = html;
+    }
+
     init();
 </script>
 {% endblock %}
