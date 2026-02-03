@@ -56,6 +56,8 @@ async def page_dashboard(request: Request): return templates.TemplateResponse("i
 async def page_content(request: Request): return templates.TemplateResponse("content.html", {"request": request, "active_page": "content"})
 @app.get("/report")
 async def page_report(request: Request): return templates.TemplateResponse("report.html", {"request": request, "active_page": "report"})
+@app.get("/details")
+async def page_details(request: Request): return templates.TemplateResponse("details.html", {"request": request, "active_page": "details"})
 
 # === API: 用户列表 ===
 @app.get("/api/users")
@@ -89,7 +91,7 @@ async def api_dashboard(user_id: Optional[str] = None):
         }}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-# === API: 最近播放 ===
+# === API: 最近播放 (限制50) ===
 @app.get("/api/stats/recent")
 async def api_recent_activity(user_id: Optional[str] = None):
     try:
@@ -143,7 +145,7 @@ async def api_recent_activity(user_id: Optional[str] = None):
         return {"status": "success", "data": final_data}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-# === API: 用户排行 ===
+# === API: 排行榜 ===
 @app.get("/api/stats/top_users_list")
 async def api_top_users_list():
     try:
@@ -158,56 +160,99 @@ async def api_top_users_list():
         return {"status": "success", "data": data}
     except: return {"status": "success", "data": []}
 
-# === 🔥 升级版 API: 内容风云榜 (支持分类和排序) ===
+# === API: 内容榜 ===
 @app.get("/api/stats/top_movies")
-async def api_top_movies(
-    user_id: Optional[str] = None, 
-    category: str = 'all',  # all, Movie, Episode
-    sort_by: str = 'count'  # count, duration
-):
+async def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by: str = 'count'):
+    try:
+        where, params = "WHERE 1=1", []
+        if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
+        if category == 'Movie': where += " AND ItemType = 'Movie'"
+        elif category == 'Episode': where += " AND ItemType = 'Episode'"
+        
+        order = "ORDER BY PlayCount DESC" if sort_by == 'count' else "ORDER BY TotalTime DESC"
+        sql = f"SELECT ItemName, ItemId, ItemType, COUNT(*) as PlayCount, SUM(PlayDuration) as TotalTime FROM PlaybackActivity {where} GROUP BY ItemId, ItemName {order} LIMIT 20"
+        
+        results = query_db(sql, params)
+        return {"status": "success", "data": [dict(r) for r in results] if results else []}
+    except Exception as e: return {"status": "error", "message": str(e)}
+
+# === 🔥 新增 API: 深度用户详情 ===
+@app.get("/api/stats/user_details")
+async def api_user_details(user_id: Optional[str] = None):
     try:
         where = "WHERE 1=1"
         params = []
-        
-        # 1. 用户过滤
         if user_id and user_id != 'all': 
             where += " AND UserId = ?"
             params.append(user_id)
-            
-        # 2. 分类过滤 (关键升级)
-        if category == 'Movie':
-            where += " AND ItemType = 'Movie'"
-        elif category == 'Episode':
-            where += " AND ItemType = 'Episode'"
-            
-        # 3. 排序逻辑
-        order_clause = "ORDER BY PlayCount DESC"
-        if sort_by == 'duration':
-            order_clause = "ORDER BY TotalTime DESC"
-            
-        sql = f"""
-        SELECT ItemName, ItemId, ItemType, COUNT(*) as PlayCount, SUM(PlayDuration) as TotalTime
-        FROM PlaybackActivity
-        {where}
-        GROUP BY ItemId, ItemName
-        {order_clause}
-        LIMIT 20
-        """
-        
-        results = query_db(sql, params)
-        if not results: return {"status": "success", "data": []}
-        
-        # 数据处理：如果是剧集，尝试获取 SeriesId 以合并封面
-        # (注：SQL层面的合并比较复杂，这里先做简单的ID聚合，封面逻辑交给前端代理)
-        data = []
-        for row in results:
-            data.append(dict(row))
-            
-        return {"status": "success", "data": data}
-    except Exception as e: 
-        return {"status": "error", "message": str(e)}
 
-# === API: 图片代理 ===
+        # 1. 24小时分布 (Hour 0-23)
+        # SQLite 提取小时: strftime('%H', DateCreated)
+        hourly_sql = f"""
+        SELECT strftime('%H', DateCreated) as Hour, COUNT(*) as Plays 
+        FROM PlaybackActivity 
+        {where} 
+        GROUP BY Hour 
+        ORDER BY Hour
+        """
+        hourly_res = query_db(hourly_sql, params)
+        hourly_data = {str(i).zfill(2): 0 for i in range(24)}
+        if hourly_res:
+            for r in hourly_res: hourly_data[r['Hour']] = r['Plays']
+
+        # 2. 设备分布
+        # 兼容性: 优先用 DeviceName, 没有则用 ClientName
+        device_sql = f"""
+        SELECT COALESCE(DeviceName, ClientName, 'Unknown') as Device, COUNT(*) as Plays 
+        FROM PlaybackActivity 
+        {where} 
+        GROUP BY Device 
+        ORDER BY Plays DESC
+        """
+        device_res = query_db(device_sql, params)
+        device_data = [dict(r) for r in device_res] if device_res else []
+
+        # 3. 每日观看时长趋势 (近30天)
+        daily_sql = f"""
+        SELECT date(DateCreated) as Day, SUM(PlayDuration) as Duration
+        FROM PlaybackActivity
+        {where} AND DateCreated > date('now', '-30 days')
+        GROUP BY Day
+        ORDER BY Day
+        """
+        daily_res = query_db(daily_sql, params)
+        daily_data = [dict(r) for r in daily_res] if daily_res else []
+
+        # 4. 详细流水日志 (最近100条)
+        logs_sql = f"""
+        SELECT DateCreated, ItemName, PlayDuration, COALESCE(DeviceName, ClientName) as Device, UserId 
+        FROM PlaybackActivity 
+        {where} 
+        ORDER BY DateCreated DESC 
+        LIMIT 100
+        """
+        logs_res = query_db(logs_sql, params)
+        
+        user_map = get_user_map()
+        logs_data = []
+        if logs_res:
+            for r in logs_res:
+                l = dict(r)
+                l['UserName'] = user_map.get(l['UserId'], "User")
+                logs_data.append(l)
+
+        return {
+            "status": "success", 
+            "data": {
+                "hourly": hourly_data,
+                "devices": device_data,
+                "daily": daily_data,
+                "logs": logs_data
+            }
+        }
+    except Exception as e: return {"status": "error", "message": str(e)}
+
+# === 图片代理 ===
 @app.get("/api/proxy/image/{item_id}/{img_type}")
 async def proxy_image(item_id: str, img_type: str):
     target_id = item_id
@@ -228,18 +273,15 @@ async def proxy_image(item_id: str, img_type: str):
         except: pass
 
     suffix = "/Images/Backdrop?maxWidth=800" if img_type == 'backdrop' else "/Images/Primary?maxHeight=400"
-    
     try:
         resp = requests.get(f"{EMBY_HOST}/emby/Items/{target_id}{suffix}", timeout=5)
         if resp.status_code == 200:
             return Response(content=resp.content, media_type=resp.headers.get("Content-Type", "image/jpeg"))
-        
         if attempted_smart and target_id != item_id:
             fallback_resp = requests.get(f"{EMBY_HOST}/emby/Items/{item_id}{suffix}", timeout=5)
             if fallback_resp.status_code == 200:
                 return Response(content=fallback_resp.content, media_type=fallback_resp.headers.get("Content-Type", "image/jpeg"))
     except: pass
-    
     return RedirectResponse(FALLBACK_IMAGE_URL)
 
 if __name__ == "__main__":

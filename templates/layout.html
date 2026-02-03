@@ -14,12 +14,10 @@
         body { font-family: 'Noto Sans SC', sans-serif; background-color: #f9fafb; }
         .nav-item.active { background-color: #f0fdf4; color: #15803d; border-right: 3px solid #15803d; font-weight: 700; }
         
-        /* 移动端侧边栏动画 */
         #mobile-sidebar { transition: transform 0.3s ease-in-out; }
         .sidebar-open { transform: translateX(0) !important; }
         .sidebar-closed { transform: translateX(-100%); }
         
-        /* 隐藏滚动条但保留功能 */
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
@@ -41,6 +39,9 @@
             </a>
             <a href="/content" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'content' %}active{% else %}text-gray-500{% endif %}">
                 <i class="fa-solid fa-film w-6"></i> <span class="ml-2">内容排行</span>
+            </a>
+            <a href="/details" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'details' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-magnifying-glass-chart w-6"></i> <span class="ml-2">数据洞察</span>
             </a>
             <a href="/report" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'report' %}active{% else %}text-gray-500{% endif %}">
                 <i class="fa-solid fa-wand-magic-sparkles w-6"></i> <span class="ml-2">映迹工坊</span>
@@ -72,6 +73,9 @@
             </a>
             <a href="/content" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'content' %}active{% else %}text-gray-500{% endif %}">
                 <i class="fa-solid fa-film w-6"></i> <span class="ml-2">内容排行</span>
+            </a>
+            <a href="/details" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'details' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-magnifying-glass-chart w-6"></i> <span class="ml-2">数据洞察</span>
             </a>
             <a href="/report" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'report' %}active{% else %}text-gray-500{% endif %}">
                 <i class="fa-solid fa-wand-magic-sparkles w-6"></i> <span class="ml-2">映迹工坊</span>
