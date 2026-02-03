@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  emby-stats:
+    build: .
+    container_name: emby-stats
+    restart: unless-stopped
+    ports:
+      - "10307:10307"  # 你的指定端口
+    volumes:
+      # ⚠️ 关键：请修改左边的路径为你 Emby 服务器实际的 data 路径
+      # 通常在 /var/lib/emby/data 或 /config/data (取决于你 Emby 的安装方式)
+      - /path/to/your/emby/data:/emby-data:ro 
+    environment:
+      - TZ=Asia/Shanghai
+      # 指定数据库在容器内的路径（对应上面的映射）
+      - DB_PATH=/emby-data/playback_reporting.db
+      # 你的 Emby 地址（用于前端显示图片）
+      - EMBY_HOST=http://192.168.xx.xx:8096 

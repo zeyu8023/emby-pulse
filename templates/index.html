@@ -1,0 +1,111 @@
+{% extends "layout.html" %}
+
+{% block title %}仪表盘 - Emby Stats{% endblock %}
+
+{% block content %}
+<header class="h-16 bg-white/80 backdrop-blur-md border-b border-gray-200 flex items-center justify-between px-8 sticky top-0 z-10">
+    <h2 class="text-lg font-bold text-gray-800">服务器概览</h2>
+    <div class="text-sm text-gray-500" id="current-date">Loading...</div>
+</header>
+
+<div class="p-8 space-y-8">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-gray-500 text-sm font-medium mb-1">总播放次数</p>
+                    <h3 class="text-3xl font-bold text-gray-900" id="stat-plays">-</h3>
+                </div>
+                <div class="p-2 bg-green-50 rounded-lg text-green-600"><i class="fa-solid fa-play"></i></div>
+            </div>
+        </div>
+        <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-gray-500 text-sm font-medium mb-1">活跃用户 (30天)</p>
+                    <h3 class="text-3xl font-bold text-gray-900" id="stat-users">-</h3>
+                </div>
+                <div class="p-2 bg-blue-50 rounded-lg text-blue-600"><i class="fa-solid fa-users"></i></div>
+            </div>
+        </div>
+        <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-gray-500 text-sm font-medium mb-1">总播放时长 (小时)</p>
+                    <h3 class="text-3xl font-bold text-gray-900" id="stat-duration">-</h3>
+                </div>
+                <div class="p-2 bg-purple-50 rounded-lg text-purple-600"><i class="fa-solid fa-clock"></i></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+        <h3 class="text-lg font-bold text-gray-800 mb-4">近7天流量趋势</h3>
+        <div class="relative h-72 w-full">
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 设置当前日期
+    document.getElementById('current-date').innerText = new Date().toLocaleDateString();
+
+    // 1. 获取统计数据
+    async function fetchDashboardData() {
+        try {
+            const response = await fetch('/api/stats/dashboard');
+            const res = await response.json();
+            
+            if(res.status === 'success') {
+                const data = res.data;
+                // 填充数字
+                document.getElementById('stat-plays').innerText = data.total_plays || 0;
+                document.getElementById('stat-users').innerText = data.active_users || 0;
+                // 秒转小时
+                const hours = Math.round((data.total_duration || 0) / 3600);
+                document.getElementById('stat-duration').innerText = hours;
+            } else {
+                console.error("API Error:", res.message);
+            }
+        } catch (error) {
+            console.error("Network Error:", error);
+            document.getElementById('stat-plays').innerText = "Err";
+        }
+    }
+
+    // 2. 初始化图表 (目前是模拟数据，后续可接 API)
+    function initChart() {
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+                datasets: [{
+                    label: '播放量',
+                    data: [12, 19, 3, 5, 2, 30, 45],
+                    borderColor: '#52b54b',
+                    backgroundColor: 'rgba(82, 181, 75, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { borderDash: [2, 4] } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    }
+
+    // 执行
+    fetchDashboardData();
+    initChart();
+</script>
+{% endblock %}

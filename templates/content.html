@@ -1,0 +1,156 @@
+{% extends "layout.html" %}
+
+{% block title %}内容风云榜 - Emby Stats{% endblock %}
+
+{% block head %}
+<style>
+    .hero-mask { 
+        background: linear-gradient(to right, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.8) 40%, rgba(255,255,255,0) 100%); 
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto w-full px-8 py-8">
+    <div class="flex justify-between items-end mb-6">
+        <h1 class="text-2xl font-black text-gray-900">内容风云榜</h1>
+        <button onclick="loadContent()" class="text-sm text-gray-500 hover:text-green-600">
+            <i class="fa-solid fa-rotate-right mr-1"></i> 刷新
+        </button>
+    </div>
+
+    <div id="loading" class="text-center py-20 text-gray-400">
+        <i class="fa-solid fa-circle-notch fa-spin text-3xl"></i>
+        <p class="mt-4 text-sm">正在分析全服数据...</p>
+    </div>
+
+    <div id="content-area" class="hidden animate-fade-in">
+        
+        <div id="hero-section"></div>
+
+        <h3 class="text-xl font-bold text-gray-900 mb-4 mt-10">
+            <i class="fa-solid fa-list-ol text-gray-400 mr-2"></i> 热门榜单 Top 10
+        </h3>
+        <div id="list-section" class="grid grid-cols-1 gap-4"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // ⚠️ 必填：你的 Emby 地址，用于前端加载图片
+    // 如果你在内网使用，填内网IP (如 http://192.168.1.5:8096)
+    // 如果是反代，填域名 (如 https://emby.example.com)
+    const EMBY_HOST = ""; // 留空则尝试使用默认占位图
+
+    async function loadContent() {
+        document.getElementById('loading').classList.remove('hidden');
+        document.getElementById('content-area').classList.add('hidden');
+
+        try {
+            const response = await fetch('/api/stats/top_movies');
+            const res = await response.json();
+            
+            if(res.status === 'success' && res.data.length > 0) {
+                const list = res.data;
+                const top1 = list[0];
+                const others = list.slice(1);
+                
+                renderHero(top1);
+                renderList(others);
+                
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('content-area').classList.remove('hidden');
+            } else {
+                document.getElementById('loading').innerHTML = "<p>暂无播放数据</p>";
+            }
+        } catch (e) {
+            console.error(e);
+            document.getElementById('loading').innerText = "数据加载失败，请检查后台日志";
+        }
+    }
+
+    // 辅助：获取图片链接
+    function getImgUrl(itemId) {
+        if (!EMBY_HOST || !itemId) return 'https://via.placeholder.com/300x450?text=No+Emby+Host';
+        return `${EMBY_HOST}/emby/Items/${itemId}/Images/Primary?maxHeight=400&quality=90`;
+    }
+    
+    function getBackdropUrl(itemId) {
+        if (!EMBY_HOST || !itemId) return '';
+        return `${EMBY_HOST}/emby/Items/${itemId}/Images/Backdrop?maxWidth=800&quality=80`;
+    }
+
+    // 渲染 Top 1
+    function renderHero(item) {
+        const imgUrl = getImgUrl(item.ItemId);
+        const bgUrl = getBackdropUrl(item.ItemId);
+        
+        const html = `
+        <div class="relative w-full h-80 rounded-3xl overflow-hidden shadow-xl mb-8 bg-gray-900 group">
+            <div class="absolute inset-0 bg-cover bg-center opacity-60 transition duration-700 group-hover:scale-105" 
+                 style="background-image: url('${bgUrl}');"></div>
+            <div class="absolute inset-0 hero-mask"></div>
+            
+            <div class="relative z-10 h-full flex items-center px-10">
+                <div class="w-40 h-60 rounded-xl shadow-2xl overflow-hidden border-4 border-white transform rotate-3 transition group-hover:rotate-0 bg-gray-300 shrink-0">
+                    <img src="${imgUrl}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/300x450?text=No+Img'">
+                </div>
+                <div class="ml-8 max-w-lg">
+                    <div class="text-yellow-600 font-bold uppercase tracking-wider text-sm mb-1">
+                        <i class="fa-solid fa-crown"></i> 全服冠军
+                    </div>
+                    <h2 class="text-4xl font-black text-gray-900 leading-tight mb-4 line-clamp-2">${item.ItemName}</h2>
+                    <div class="flex space-x-8 text-gray-700">
+                        <div>
+                            <span class="text-3xl font-bold block">${item.PlayCount}</span>
+                            <span class="text-xs text-gray-500 uppercase">播放次数</span>
+                        </div>
+                        <div>
+                            <span class="text-3xl font-bold block">${Math.round(item.TotalTime/60)}</span>
+                            <span class="text-xs text-gray-500 uppercase">累计分钟</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        document.getElementById('hero-section').innerHTML = html;
+    }
+
+    // 渲染列表
+    function renderList(items) {
+        let html = '';
+        items.forEach((item, index) => {
+            const rank = index + 2;
+            const imgUrl = getImgUrl(item.ItemId);
+            
+            // 前三名给不同颜色的牌子
+            let rankColor = "text-gray-300";
+            if(rank === 2) rankColor = "text-gray-400"; // 银
+            if(rank === 3) rankColor = "text-amber-700"; // 铜
+
+            html += `
+            <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center hover:shadow-md transition group">
+                <div class="w-12 text-center mr-4 text-3xl font-black ${rankColor} italic">${rank}</div>
+                <div class="w-12 h-16 rounded bg-gray-200 overflow-hidden shrink-0 mr-4 shadow-sm">
+                     <img src="${imgUrl}" class="w-full h-full object-cover group-hover:scale-110 transition duration-500" onerror="this.src='https://via.placeholder.com/100x150?text=No'">
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h4 class="text-base font-bold text-gray-800 truncate">${item.ItemName}</h4>
+                    <div class="text-xs text-gray-500 mt-1">
+                        <span class="bg-gray-100 px-2 py-0.5 rounded text-gray-600">播放 ${item.PlayCount} 次</span>
+                    </div>
+                </div>
+                <div class="text-right px-4 hidden sm:block">
+                     <div class="text-sm font-bold text-gray-700">${Math.round(item.TotalTime/60)}m</div>
+                     <div class="text-xs text-gray-400">时长</div>
+                </div>
+            </div>`;
+        });
+        document.getElementById('list-section').innerHTML = html;
+    }
+
+    // 页面加载即运行
+    loadContent();
+</script>
+{% endblock %}

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}EmbyPulse 映迹{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;500;700;900&display=swap');
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f9fafb; }
+        
+        /* 侧边栏选中样式 */
+        .nav-item.active { 
+            background-color: #f0fdf4; 
+            color: #15803d; 
+            border-right: 3px solid #15803d; 
+            font-weight: 700;
+        }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body class="flex h-screen overflow-hidden text-gray-800">
+
+    <aside class="w-64 bg-white border-r border-gray-200 flex flex-col hidden md:flex z-50 shadow-sm relative">
+        <div class="h-16 flex items-center px-6 border-b border-gray-100">
+            <i class="fa-solid fa-heart-pulse text-green-600 text-2xl mr-3"></i>
+            <div>
+                <span class="text-xl font-black tracking-tight text-gray-900 leading-none block">EmbyPulse</span>
+                <span class="text-[10px] text-gray-400 font-bold tracking-widest uppercase block mt-0.5">映 迹</span>
+            </div>
+        </div>
+        
+        <nav class="flex-1 px-4 py-6 space-y-2">
+            <a href="/" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 
+               {% if active_page == 'dashboard' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-chart-line w-6"></i> 仪表盘
+            </a>
+            
+            <a href="/content" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50
+               {% if active_page == 'content' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-film w-6"></i> 内容排行
+            </a>
+            
+            <a href="/report" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50
+               {% if active_page == 'report' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-wand-magic-sparkles w-6"></i> 映迹工坊
+            </a>
+        </nav>
+
+        <div class="p-4 border-t border-gray-100">
+            <div class="flex items-center">
+                <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center font-bold text-green-700">A</div>
+                <div class="ml-3">
+                    <p class="text-sm font-medium text-gray-900">管理员</p>
+                    <p class="text-xs text-green-600 flex items-center"><span class="w-2 h-2 bg-green-500 rounded-full mr-1"></span>在线</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col overflow-y-auto relative">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

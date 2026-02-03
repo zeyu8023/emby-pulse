@@ -1,0 +1,158 @@
+{% extends "layout.html" %}
+
+{% block title %}映迹工坊 - EmbyPulse{% endblock %}
+
+{% block head %}
+<style>
+    /* 手机海报固定比例 375x667 */
+    .poster-container {
+        width: 375px; height: 667px;
+        background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+        box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .glass-card { 
+        background: rgba(255, 255, 255, 0.1); 
+        backdrop-filter: blur(10px); 
+        border: 1px solid rgba(255, 255, 255, 0.2); 
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex h-full flex-col md:flex-row">
+    
+    <div class="w-full md:w-80 bg-white border-r border-gray-200 p-6 flex flex-col z-10 overflow-y-auto shrink-0">
+        <h2 class="text-xl font-bold text-gray-800 mb-6">配置报告</h2>
+        
+        <div class="space-y-6 flex-1">
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-2">选择用户</label>
+                <div class="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" checked class="text-green-600 rounded focus:ring-green-500" disabled>
+                        <span class="ml-2 text-sm text-gray-700">当前：管理员</span>
+                    </label>
+                </div>
+                <p class="text-xs text-gray-400 mt-2">*多用户选择功能开发中</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-2">时间范围</label>
+                <select id="time-range" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring-green-500 p-2 border">
+                    <option value="week">本周</option>
+                    <option value="month" selected>本月</option>
+                    <option value="year">2026年度</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-2">底部寄语</label>
+                <textarea id="custom-msg" rows="3" class="w-full border-gray-300 rounded-lg text-sm p-2 border focus:ring-green-500 focus:border-green-500" 
+                    oninput="document.getElementById('poster-msg').innerText = this.value"
+                >生活不仅有代码，还有电影。</textarea>
+            </div>
+        </div>
+
+        <button onclick="downloadPoster()" id="dl-btn" class="mt-8 w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-lg transition transform active:scale-95 flex justify-center items-center">
+            <i class="fa-solid fa-download mr-2"></i> 保存映迹海报
+        </button>
+    </div>
+
+    <div class="flex-1 bg-gray-100 flex items-center justify-center p-8 overflow-auto relative">
+        <div class="absolute inset-0 opacity-10 pointer-events-none" style="background-image: radial-gradient(#94a3b8 1px, transparent 1px); background-size: 20px 20px;"></div>
+        
+        <div id="capture-area" class="poster-container flex flex-col relative shrink-0">
+            
+            <div class="absolute inset-0 z-0 opacity-40 blur-sm bg-cover bg-center" style="background-image: url('https://image.tmdb.org/t/p/w500/r2J02Z2OpLYct205OE24DkQnhZ0.jpg');"></div>
+            <div class="absolute inset-0 z-0 bg-gradient-to-t from-gray-900 via-gray-900/80 to-transparent"></div>
+
+            <div class="relative z-10 p-6 flex-1 flex flex-col text-white">
+                <div class="flex justify-between items-center mb-8">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center font-bold text-white shadow-lg border border-white/20">
+                            <i class="fa-solid fa-heart-pulse"></i>
+                        </div>
+                        <div>
+                            <div class="text-sm font-black tracking-wide">EmbyPulse</div>
+                            <div class="text-[10px] text-gray-300 font-bold uppercase tracking-widest">映 迹 · 洞 察</div>
+                        </div>
+                    </div>
+                    <div class="px-2 py-1 border border-white/20 rounded text-xs text-gray-300 font-mono">2026</div>
+                </div>
+
+                <div class="mb-8">
+                    <div class="text-green-400 text-sm font-bold mb-1 tracking-wider uppercase">专注时长</div>
+                    <div class="text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-300">42.5</div>
+                    <div class="text-sm text-gray-400 mt-2">小时 · 击败了 85% 的用户</div>
+                </div>
+
+                <div class="glass-card p-4 grid grid-cols-2 gap-4 rounded-xl mb-6">
+                    <div class="text-center border-r border-white/10">
+                        <div class="text-2xl font-bold">12</div>
+                        <div class="text-xs text-gray-400 uppercase mt-1">播放影片</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold">Night</div>
+                        <div class="text-xs text-gray-400 uppercase mt-1">活跃时段</div>
+                    </div>
+                </div>
+
+                <div class="flex-1">
+                    <div class="text-xs font-bold text-gray-500 uppercase mb-4 tracking-wider">本月最爱 Top 1</div>
+                    <div class="flex gap-4 items-center group">
+                        <div class="w-16 h-24 bg-gray-700 rounded-lg shadow-2xl overflow-hidden shrink-0 border border-white/10 transform group-hover:scale-105 transition">
+                            <img src="https://image.tmdb.org/t/p/w200/gPbM0MK8CP8A174rmUwGsADNYKD.jpg" class="w-full h-full object-cover">
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-lg leading-tight">狂飙</h4>
+                            <div class="text-sm text-gray-400 mt-1">
+                                <i class="fa-solid fa-rotate-right text-green-500 mr-1"></i> 反复观看了 5 次
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-auto border-t border-white/10 pt-4">
+                    <p id="poster-msg" class="text-xs text-gray-400 italic">生活不仅有代码，还有电影。</p>
+                    <div class="mt-2 flex items-center text-[10px] text-gray-500 uppercase tracking-widest">
+                        <span class="font-bold text-gray-400 mr-1">EmbyPulse</span> 映迹
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function downloadPoster() {
+        const node = document.getElementById('capture-area');
+        const btn = document.getElementById('dl-btn');
+        const originalText = btn.innerHTML;
+
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> 生成中...';
+        btn.disabled = true;
+
+        html2canvas(node, { 
+            scale: 2, 
+            useCORS: true, 
+            backgroundColor: null 
+        }).then(canvas => {
+            const link = document.createElement('a');
+            // 修改下载文件名
+            link.download = 'EmbyPulse_Report_2026.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }).catch(err => {
+            console.error(err);
+            alert('生成失败，请检查控制台');
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+    }
+</script>
+{% endblock %}
