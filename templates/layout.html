@@ -13,10 +13,15 @@
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;500;700;900&display=swap');
         body { font-family: 'Noto Sans SC', sans-serif; background-color: #f9fafb; }
         .nav-item.active { background-color: #f0fdf4; color: #15803d; border-right: 3px solid #15803d; font-weight: 700; }
+        
         /* 移动端侧边栏动画 */
         #mobile-sidebar { transition: transform 0.3s ease-in-out; }
         .sidebar-open { transform: translateX(0) !important; }
         .sidebar-closed { transform: translateX(-100%); }
+        
+        /* 隐藏滚动条但保留功能 */
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
     {% block head %}{% endblock %}
 </head>
@@ -31,7 +36,15 @@
             </div>
         </div>
         <nav class="flex-1 px-4 py-6 space-y-2">
-            {% include "nav_links.html" %}
+            <a href="/" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'dashboard' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-chart-line w-6"></i> <span class="ml-2">仪表盘</span>
+            </a>
+            <a href="/content" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'content' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-film w-6"></i> <span class="ml-2">内容排行</span>
+            </a>
+            <a href="/report" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'report' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-wand-magic-sparkles w-6"></i> <span class="ml-2">映迹工坊</span>
+            </a>
         </nav>
         <div class="p-4 border-t border-gray-100">
             <div class="flex items-center">
@@ -54,7 +67,15 @@
             <button onclick="toggleSidebar()" class="text-gray-500"><i class="fa-solid fa-xmark text-xl"></i></button>
         </div>
         <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-            {% include "nav_links.html" %}
+            <a href="/" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'dashboard' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-chart-line w-6"></i> <span class="ml-2">仪表盘</span>
+            </a>
+            <a href="/content" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'content' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-film w-6"></i> <span class="ml-2">内容排行</span>
+            </a>
+            <a href="/report" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'report' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-wand-magic-sparkles w-6"></i> <span class="ml-2">映迹工坊</span>
+            </a>
         </nav>
     </aside>
 
@@ -62,9 +83,10 @@
         <header class="h-14 bg-white border-b border-gray-200 flex items-center px-4 md:hidden shrink-0 justify-between z-40 sticky top-0">
             <button onclick="toggleSidebar()" class="text-gray-600 p-2 -ml-2"><i class="fa-solid fa-bars text-xl"></i></button>
             <span class="font-bold text-gray-800">EmbyPulse</span>
-            <div class="w-8"></div> </header>
+            <div class="w-8"></div>
+        </header>
 
-        <div class="flex-1 overflow-y-auto overflow-x-hidden relative w-full custom-scrollbar">
+        <div class="flex-1 overflow-y-auto overflow-x-hidden relative w-full custom-scrollbar bg-gray-50/50">
             {% block content %}{% endblock %}
         </div>
     </main>
