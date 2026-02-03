@@ -2,6 +2,7 @@ import sqlite3
 import os
 import uvicorn
 import requests
+import datetime
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,7 +17,7 @@ EMBY_HOST = os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/')
 EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip()
 FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
-print(f"--- EmbyPulse Ultimate v2 ---")
+print(f"--- EmbyPulse Ultimate v3 ---")
 print(f"DB: {DB_PATH}")
 print(f"API: {'✅ 已加载' if EMBY_API_KEY else '❌ 未加载'}")
 
@@ -95,15 +96,11 @@ async def api_recent_activity(user_id: Optional[str] = None):
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
-        
-        # 查 300 条供筛选
         results = query_db(f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType, PlayDuration FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 300", params)
         if not results: return {"status": "success", "data": []}
-
         raw_items = [dict(row) for row in results]
         user_map = get_user_map()
         metadata_map = {}
-        
         if EMBY_API_KEY:
             all_ids = [i['ItemId'] for i in raw_items][:100]
             chunk_size = 20
@@ -115,33 +112,19 @@ async def api_recent_activity(user_id: Optional[str] = None):
                     if res.status_code == 200:
                         for m in res.json().get('Items', []): metadata_map[m['Id']] = m
                 except: pass
-
-        final_data = []
-        seen_keys = set() 
+        final_data, seen_keys = [], set()
         for item in raw_items:
             item['UserName'] = user_map.get(item['UserId'], "Unknown")
-            display_id = item['ItemId']
-            display_title = item['ItemName']
-            unique_key = item['ItemName']
+            display_id, display_title, unique_key = item['ItemId'], item['ItemName'], item['ItemName']
             meta = metadata_map.get(item['ItemId'])
-            
             if meta:
                 if meta.get('Type') == 'Episode':
                     if meta.get('SeriesId'):
-                        display_id = meta.get('SeriesId')
-                        unique_key = meta.get('SeriesId')
+                        display_id, unique_key = meta.get('SeriesId'), meta.get('SeriesId')
                         if meta.get('SeriesName'): display_title = meta.get('SeriesName')
-            elif ' - ' in item['ItemName']:
-                 display_title = item['ItemName'].split(' - ')[0]
-                 unique_key = display_title
-
+            elif ' - ' in item['ItemName']: display_title = item['ItemName'].split(' - ')[0]; unique_key = display_title
             if unique_key not in seen_keys:
-                seen_keys.add(unique_key)
-                item['DisplayId'] = display_id
-                item['DisplayTitle'] = display_title
-                final_data.append(item)
-            
-            # 🔥 提供 50 个备胎给前端，让前端去剔除裂图
+                seen_keys.add(unique_key); item['DisplayId'] = display_id; item['DisplayTitle'] = display_title; final_data.append(item)
             if len(final_data) >= 50: break 
         return {"status": "success", "data": final_data}
     except Exception as e: return {"status": "error", "message": str(e)}
@@ -170,50 +153,69 @@ async def api_live_sessions():
         return {"status": "success", "data": sessions}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-# === 🔥 新增：多维度统计图表接口 ===
-@app.get("/api/stats/chart")
-async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month'):
-    """
-    dimension: 'year' (按年), 'month' (按月), 'day' (按日-近30天)
-    """
+# === 🔥 新增：海报专用聚合数据接口 ===
+@app.get("/api/stats/poster_data")
+async def api_poster_data(user_id: Optional[str] = None):
     try:
         where, params = "WHERE 1=1", []
-        if user_id and user_id != 'all': 
-            where += " AND UserId = ?"
-            params.append(user_id)
+        if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
         
-        sql = ""
-        if dimension == 'year':
-            # 按年统计所有数据
-            sql = f"""
-            SELECT strftime('%Y', DateCreated) as Label, SUM(PlayDuration) as Duration 
-            FROM PlaybackActivity {where} 
-            GROUP BY Label ORDER BY Label DESC LIMIT 5
-            """
-        elif dimension == 'day':
-            # 按日统计 (最近 30 天)
-            where += " AND DateCreated > date('now', '-30 days')"
-            sql = f"""
-            SELECT date(DateCreated) as Label, SUM(PlayDuration) as Duration 
-            FROM PlaybackActivity {where} 
-            GROUP BY Label ORDER BY Label
-            """
-        else:
-            # 默认按月统计 (最近 12 个月)
-            where += " AND DateCreated > date('now', '-12 months')"
-            sql = f"""
-            SELECT strftime('%Y-%m', DateCreated) as Label, SUM(PlayDuration) as Duration 
-            FROM PlaybackActivity {where} 
-            GROUP BY Label ORDER BY Label
-            """
-            
+        # 1. 基础统计
+        stats_sql = f"SELECT COUNT(*) as Plays, SUM(PlayDuration) as Duration FROM PlaybackActivity {where}"
+        stats_res = query_db(stats_sql, params)
+        total_plays = stats_res[0]['Plays'] if stats_res else 0
+        total_hours = round((stats_res[0]['Duration'] or 0) / 3600)
+
+        # 2. Top 3 内容
+        top_sql = f"""
+        SELECT ItemName, ItemId, COUNT(*) as P, SUM(PlayDuration) as T 
+        FROM PlaybackActivity {where} 
+        GROUP BY ItemId, ItemName 
+        ORDER BY P DESC LIMIT 3
+        """
+        top_res = query_db(top_sql, params)
+        top3 = [dict(r) for r in top_res] if top_res else []
+
+        # 3. 关键词分析 (Simple Tags)
+        tags = []
+        if total_hours > 500: tags.append("影视肝帝")
+        elif total_hours > 100: tags.append("忠实观众")
+        
+        # 深夜占比
+        night_sql = f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND strftime('%H', DateCreated) BETWEEN '00' AND '05'"
+        night_res = query_db(night_sql, params)
+        if night_res and total_plays > 0 and (night_res[0]['c'] / total_plays > 0.2): tags.append("修仙党")
+        
+        # 最活跃时段
+        hour_sql = f"SELECT strftime('%H', DateCreated) as Hour, COUNT(*) as c FROM PlaybackActivity {where} GROUP BY Hour ORDER BY c DESC LIMIT 1"
+        hour_res = query_db(hour_sql, params)
+        active_hour = f"{hour_res[0]['Hour']}点" if hour_res else "未知"
+
+        # 如果没有 tag，补一个
+        if not tags: tags.append("佛系观众")
+
+        return {
+            "status": "success",
+            "data": {
+                "plays": total_plays,
+                "hours": total_hours,
+                "top3": top3,
+                "tags": tags[:2], # 只取前2个
+                "active_hour": active_hour
+            }
+        }
+    except Exception as e: return {"status": "error", "message": str(e)}
+
+@app.get("/api/stats/monthly_stats")
+async def api_monthly_stats(user_id: Optional[str] = None):
+    try:
+        where, params = "WHERE DateCreated > date('now', '-12 months')", []
+        if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
+        sql = f"SELECT strftime('%Y-%m', DateCreated) as Month, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Month ORDER BY Month"
         results = query_db(sql, params)
         data = {}
         if results:
-            # 如果是年份，倒序转正序显示
-            rows = results[::-1] if dimension == 'year' else results
-            for r in rows:
-                data[r['Label']] = int(r['Duration'])
+            for r in results: data[r['Month']] = int(r['Duration'])
         return {"status": "success", "data": data}
     except: return {"status": "error", "data": {}}
 
@@ -223,24 +225,15 @@ async def api_badges(user_id: Optional[str] = None):
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
         badges = []
-        night_sql = f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND strftime('%H', DateCreated) BETWEEN '02' AND '05'"
-        night_res = query_db(night_sql, params)
-        if night_res and night_res[0]['c'] > 5:
-            badges.append({"id": "night", "name": "修仙党", "icon": "fa-moon", "color": "text-purple-500", "bg": "bg-purple-100", "desc": "深夜是灵魂最自由的时刻"})
-        mobile_sql = f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND (DeviceName LIKE '%iPhone%' OR DeviceName LIKE '%Android%' OR ClientName LIKE '%Mobile%')"
-        total_sql = f"SELECT COUNT(*) as c FROM PlaybackActivity {where}"
-        mob_res = query_db(mobile_sql, params)
-        tot_res = query_db(total_sql, params)
-        if tot_res and tot_res[0]['c'] > 10 and mob_res and (mob_res[0]['c'] / tot_res[0]['c'] > 0.5):
-            badges.append({"id": "mobile", "name": "手机党", "icon": "fa-mobile-screen", "color": "text-blue-500", "bg": "bg-blue-100", "desc": "走到哪看到哪"})
-        dur_sql = f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {where}"
-        dur_res = query_db(dur_sql, params)
-        if dur_res and dur_res[0]['c'] and dur_res[0]['c'] > 360000:
-            badges.append({"id": "king", "name": "影视肝帝", "icon": "fa-crown", "color": "text-yellow-600", "bg": "bg-yellow-100", "desc": "阅片量惊人"})
-        days_sql = f"SELECT COUNT(DISTINCT date(DateCreated)) as c FROM PlaybackActivity {where}"
-        days_res = query_db(days_sql, params)
-        if days_res and days_res[0]['c'] > 30:
-            badges.append({"id": "loyal", "name": "忠实观众", "icon": "fa-heart", "color": "text-red-500", "bg": "bg-red-100", "desc": "Emby 也是一种生活方式"})
+        night_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND strftime('%H', DateCreated) BETWEEN '02' AND '05'", params)
+        if night_res and night_res[0]['c'] > 5: badges.append({"id": "night", "name": "修仙党", "icon": "fa-moon", "color": "text-purple-500", "bg": "bg-purple-100", "desc": "深夜是灵魂最自由的时刻"})
+        mob_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND (DeviceName LIKE '%iPhone%' OR DeviceName LIKE '%Android%' OR ClientName LIKE '%Mobile%')", params)
+        tot_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where}", params)
+        if tot_res and tot_res[0]['c'] > 10 and mob_res and (mob_res[0]['c'] / tot_res[0]['c'] > 0.5): badges.append({"id": "mobile", "name": "手机党", "icon": "fa-mobile-screen", "color": "text-blue-500", "bg": "bg-blue-100", "desc": "走到哪看到哪"})
+        dur_res = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {where}", params)
+        if dur_res and dur_res[0]['c'] and dur_res[0]['c'] > 360000: badges.append({"id": "king", "name": "影视肝帝", "icon": "fa-crown", "color": "text-yellow-600", "bg": "bg-yellow-100", "desc": "阅片量惊人"})
+        days_res = query_db(f"SELECT COUNT(DISTINCT date(DateCreated)) as c FROM PlaybackActivity {where}", params)
+        if days_res and days_res[0]['c'] > 30: badges.append({"id": "loyal", "name": "忠实观众", "icon": "fa-heart", "color": "text-red-500", "bg": "bg-red-100", "desc": "Emby 也是一种生活方式"})
         return {"status": "success", "data": badges}
     except: return {"status": "success", "data": []}
 
@@ -292,10 +285,25 @@ async def api_user_details(user_id: Optional[str] = None):
         return {"status": "success", "data": {"hourly": hourly_data, "devices": [dict(r) for r in device_res] if device_res else [], "logs": logs_data}}
     except Exception as e: return {"status": "error", "message": str(e)}
 
+@app.get("/api/stats/chart")
+async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month'):
+    try:
+        where, params = "WHERE 1=1", []
+        if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
+        if dimension == 'year': sql = f"SELECT strftime('%Y', DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Label ORDER BY Label DESC LIMIT 5"
+        elif dimension == 'day': where += " AND DateCreated > date('now', '-30 days')"; sql = f"SELECT date(DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Label ORDER BY Label"
+        else: where += " AND DateCreated > date('now', '-12 months')"; sql = f"SELECT strftime('%Y-%m', DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Label ORDER BY Label"
+        results = query_db(sql, params)
+        data = {}
+        if results:
+            rows = results[::-1] if dimension == 'year' else results
+            for r in rows: data[r['Label']] = int(r['Duration'])
+        return {"status": "success", "data": data}
+    except: return {"status": "error", "data": {}}
+
 @app.get("/api/proxy/image/{item_id}/{img_type}")
 async def proxy_image(item_id: str, img_type: str):
-    target_id = item_id
-    attempted_smart = False
+    target_id, attempted_smart = item_id, False
     if img_type == 'primary' and EMBY_API_KEY:
         try:
             info_resp = requests.get(f"{EMBY_HOST}/emby/Items?Ids={item_id}&Fields=SeriesId,ParentId&Limit=1&api_key={EMBY_API_KEY}", timeout=2)
