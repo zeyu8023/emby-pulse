@@ -46,6 +46,17 @@ def query_db(query, args=(), one=False):
         print(f"SQL Error: {e}")
         return None
 
+# === 辅助函数：获取用户映射表 ===
+def get_user_map():
+    user_map = {}
+    if EMBY_API_KEY:
+        try:
+            res = requests.get(f"{EMBY_HOST}/emby/Users?api_key={EMBY_API_KEY}", timeout=2)
+            if res.status_code == 200:
+                for u in res.json(): user_map[u['Id']] = u['Name']
+        except: pass
+    return user_map
+
 # === 页面路由 ===
 @app.get("/")
 async def page_dashboard(request: Request):
@@ -63,18 +74,12 @@ async def page_report(request: Request):
 @app.get("/api/users")
 async def api_get_users():
     try:
+        # 只查 UserId
         sql = "SELECT DISTINCT UserId FROM PlaybackActivity"
         results = query_db(sql)
         if not results: return {"status": "success", "data": []}
 
-        user_map = {}
-        if EMBY_API_KEY:
-            try:
-                res = requests.get(f"{EMBY_HOST}/emby/Users?api_key={EMBY_API_KEY}", timeout=3)
-                if res.status_code == 200:
-                    for u in res.json(): user_map[u['Id']] = u['Name']
-            except: pass
-
+        user_map = get_user_map()
         data = []
         for row in results:
             uid = row['UserId']
@@ -111,7 +116,7 @@ async def api_dashboard(user_id: Optional[str] = None):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# === 🔥 新增 API: 最近播放活动 ===
+# === 🔥 修复 API: 最近播放 (移除 UserName) ===
 @app.get("/api/stats/recent")
 async def api_recent_activity(user_id: Optional[str] = None):
     try:
@@ -121,9 +126,9 @@ async def api_recent_activity(user_id: Optional[str] = None):
             where += " AND UserId = ?"
             params.append(user_id)
         
-        # 获取最近 12 条记录
+        # ⚠️ 修正：SQL 不查 UserName
         sql = f"""
-        SELECT DateCreated, UserId, UserName, ItemId, ItemName, ItemType, PlayDuration 
+        SELECT DateCreated, UserId, ItemId, ItemName, ItemType, PlayDuration 
         FROM PlaybackActivity 
         {where}
         ORDER BY DateCreated DESC 
@@ -131,37 +136,27 @@ async def api_recent_activity(user_id: Optional[str] = None):
         """
         results = query_db(sql, params)
         data = []
-        
-        # 为了获取真实用户名 (补全 UserName 为空的记录)
-        user_map = {}
-        if EMBY_API_KEY:
-            try:
-                res = requests.get(f"{EMBY_HOST}/emby/Users?api_key={EMBY_API_KEY}", timeout=2)
-                if res.status_code == 200:
-                    for u in res.json(): user_map[u['Id']] = u['Name']
-            except: pass
+        user_map = get_user_map()
 
         if results:
             for row in results:
                 item = dict(row)
-                # 补全用户名
-                if not item['UserName'] and item['UserId'] in user_map:
-                    item['UserName'] = user_map[item['UserId']]
-                if not item['UserName']:
-                     item['UserName'] = "Unknown"
+                # Python 补名字
+                item['UserName'] = user_map.get(item['UserId'], "Unknown")
                 data.append(item)
                 
         return {"status": "success", "data": data}
     except Exception as e:
+        print(f"Recent API Error: {e}")
         return {"status": "error", "message": str(e)}
 
-# === 🔥 新增 API: 用户排行榜 ===
+# === 🔥 修复 API: 用户排行榜 (移除 UserName) ===
 @app.get("/api/stats/top_users_list")
 async def api_top_users_list():
     try:
-        # 统计所有用户的播放时长
+        # ⚠️ 修正：SQL 不查 UserName
         sql = """
-        SELECT UserId, UserName, COUNT(*) as Plays, SUM(PlayDuration) as TotalTime
+        SELECT UserId, COUNT(*) as Plays, SUM(PlayDuration) as TotalTime
         FROM PlaybackActivity
         GROUP BY UserId
         ORDER BY TotalTime DESC
@@ -169,33 +164,21 @@ async def api_top_users_list():
         """
         results = query_db(sql)
         data = []
-        
-        # 补全用户名逻辑
-        user_map = {}
-        if EMBY_API_KEY:
-            try:
-                res = requests.get(f"{EMBY_HOST}/emby/Users?api_key={EMBY_API_KEY}", timeout=2)
-                if res.status_code == 200:
-                    for u in res.json(): user_map[u['Id']] = u['Name']
-            except: pass
+        user_map = get_user_map()
 
         if results:
             for row in results:
                 u = dict(row)
-                # 尝试用 API 获取最新名字，因为数据库里的名字可能是旧的或空的
-                real_name = user_map.get(u['UserId'])
-                if real_name:
-                    u['UserName'] = real_name
-                elif not u['UserName']:
-                    u['UserName'] = "Unknown User"
-                
+                # Python 补名字
+                u['UserName'] = user_map.get(u['UserId'], f"User {str(u['UserId'])[:5]}")
                 data.append(u)
                 
         return {"status": "success", "data": data}
     except Exception as e:
+        print(f"Top Users API Error: {e}")
         return {"status": "error", "message": str(e)}
 
-# === API: 热门内容 ===
+# === API: 热门内容 (修正) ===
 @app.get("/api/stats/top_movies")
 async def api_top_movies(user_id: Optional[str] = None):
     where = ""
@@ -204,8 +187,11 @@ async def api_top_movies(user_id: Optional[str] = None):
         where = "WHERE UserId = ?"
         params.append(user_id)
 
+    # ⚠️ 修正：移除 ItemType (有些旧版本可能没有)
+    # 如果你的数据库确定有 ItemType，可以加回去。
+    # 这里为了保险起见，我只查最核心的字段
     sql = f"""
-    SELECT ItemName, ItemId, ItemType, COUNT(*) as PlayCount, SUM(PlayDuration) as TotalTime
+    SELECT ItemName, ItemId, COUNT(*) as PlayCount, SUM(PlayDuration) as TotalTime
     FROM PlaybackActivity
     {where}
     GROUP BY ItemId, ItemName
@@ -225,6 +211,7 @@ async def proxy_image(item_id: str, img_type: str):
     target_id = item_id
     if img_type == 'primary' and EMBY_API_KEY:
         try:
+            # 使用更宽容的 Search 接口
             info_url = f"{EMBY_HOST}/emby/Items?Ids={item_id}&Fields=SeriesId,ParentId&Limit=1&api_key={EMBY_API_KEY}"
             info_resp = requests.get(info_url, timeout=3)
             if info_resp.status_code == 200:
