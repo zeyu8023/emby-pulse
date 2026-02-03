@@ -12,7 +12,7 @@ from typing import Optional
 PORT = 10307
 DB_PATH = os.getenv("DB_PATH", "/emby-data/playback_reporting.db")
 EMBY_HOST = os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/')
-EMBY_API_KEY = os.getenv("EMBY_API_KEY", "")
+EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip() # 去除可能存在的空格
 
 print(f"--- EmbyPulse 启动 ---")
 print(f"DB: {DB_PATH}")
@@ -108,7 +108,7 @@ async def api_dashboard(user_id: Optional[str] = None):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# === 🔥 智能去重版 API: 最近播放 ===
+# === 🔥 超级去重版 API: 最近播放 ===
 @app.get("/api/stats/recent")
 async def api_recent_activity(user_id: Optional[str] = None):
     try:
@@ -118,71 +118,92 @@ async def api_recent_activity(user_id: Optional[str] = None):
             where += " AND UserId = ?"
             params.append(user_id)
         
-        # 1. 查出最近 50 条 (多查点以便去重)
+        # 1. 扩大搜索范围到 60 条，保证有足够数据去重
         sql = f"""
         SELECT DateCreated, UserId, ItemId, ItemName, ItemType, PlayDuration 
         FROM PlaybackActivity 
         {where}
         ORDER BY DateCreated DESC 
-        LIMIT 50
+        LIMIT 60
         """
         results = query_db(sql, params)
         if not results: return {"status": "success", "data": []}
 
-        # 2. 准备数据
         raw_items = [dict(row) for row in results]
-        item_ids = [item['ItemId'] for item in raw_items]
         user_map = get_user_map()
         
-        # 3. 批量查询 Emby API 获取剧集信息 (SeriesId, SeriesName)
+        # 2. 批量查元数据 (分批处理，每批 20 个，防止 URL 过长报错)
         metadata_map = {}
-        if EMBY_API_KEY and item_ids:
-            try:
-                ids_str = ",".join(item_ids[:30]) # 限制一次查太多
-                url = f"{EMBY_HOST}/emby/Items?Ids={ids_str}&Fields=SeriesId,SeriesName,ParentId&api_key={EMBY_API_KEY}"
-                res = requests.get(url, timeout=3)
-                if res.status_code == 200:
-                    for meta in res.json().get('Items', []):
-                        metadata_map[meta['Id']] = meta
-            except: pass
+        all_ids = [item['ItemId'] for item in raw_items]
+        
+        if EMBY_API_KEY:
+            chunk_size = 20
+            for i in range(0, len(all_ids), chunk_size):
+                chunk_ids = all_ids[i:i + chunk_size]
+                if not chunk_ids: continue
+                try:
+                    ids_str = ",".join(chunk_ids)
+                    url = f"{EMBY_HOST}/emby/Items?Ids={ids_str}&Fields=SeriesId,SeriesName,ParentId&api_key={EMBY_API_KEY}"
+                    res = requests.get(url, timeout=4)
+                    if res.status_code == 200:
+                        for meta in res.json().get('Items', []):
+                            metadata_map[meta['Id']] = meta
+                except: pass
 
-        # 4. 去重逻辑
+        # 3. 强力去重逻辑
         final_data = []
-        seen_keys = set() # 用于存储已展示的 (SeriesId 或 MovieId)
+        seen_keys = set() 
 
         for item in raw_items:
-            # 补全用户名
             item['UserName'] = user_map.get(item['UserId'], "Unknown")
             
-            # 默认显示属性
+            # 默认值
             display_id = item['ItemId']
             display_title = item['ItemName']
+            is_episode = False
             
-            # 尝试获取剧集信息
+            # A. 优先尝试 API 元数据
             meta = metadata_map.get(item['ItemId'])
             if meta:
                 if meta.get('Type') == 'Episode':
-                    # 如果是剧集，改用 SeriesId 和 SeriesName
+                    is_episode = True
                     if meta.get('SeriesId'):
-                        display_id = meta.get('SeriesId')
-                        display_title = meta.get('SeriesName')
+                        display_id = meta.get('SeriesId') # 用剧集ID做封面
+                        if meta.get('SeriesName'):
+                             display_title = meta.get('SeriesName') # 用剧集名做标题
             
-            # 唯一键：如果是电影就是 ItemId，如果是剧集就是 SeriesId
-            unique_key = display_id 
+            # B. 兜底策略：如果 API 没查到，但名字看起来像单集，强制文本分析
+            # 例子: "海市蜃楼 - S01E04 - xxx" -> 截取 "海市蜃楼"
+            if not meta or (is_episode and display_id == item['ItemId']):
+                original_name = item['ItemName']
+                # 简单特征识别
+                if ' - ' in original_name:
+                    parts = original_name.split(' - ')
+                    # 假设第一部分是剧名
+                    display_title = parts[0]
+                    # 使用剧名作为去重键（权宜之计，虽然 ID 还是单集 ID，但至少能在列表中只保留一个名字）
+                    # 注意：如果没有 API，我们拿不到 SeriesId，只能用单集封面，但我们可以控制不显示重复的“剧名”
+                    
+            # 构造唯一键：如果是剧集，我们希望只显示一次
+            # 如果拿到了 SeriesId，用 SeriesId 去重 (完美)
+            # 如果没拿到，用 清洗后的剧名 去重 (凑合，但能防止刷屏)
+            if is_episode and meta and meta.get('SeriesId'):
+                unique_key = meta.get('SeriesId')
+            else:
+                unique_key = display_title # 文本去重
             
             if unique_key not in seen_keys:
                 seen_keys.add(unique_key)
-                # 更新 item 的显示信息，供前端使用
                 item['DisplayId'] = display_id
                 item['DisplayTitle'] = display_title
                 final_data.append(item)
             
-            if len(final_data) >= 12: # 只取前 12 个不重复的
+            # 只展示 14 个，凑齐一排 (电脑端 7列 x 2行 = 14)
+            if len(final_data) >= 14: 
                 break
                 
         return {"status": "success", "data": final_data}
     except Exception as e:
-        print(f"Recent API Error: {e}")
         return {"status": "error", "message": str(e)}
 
 # === API: 用户排行榜 ===
@@ -235,7 +256,6 @@ async def api_top_movies(user_id: Optional[str] = None):
 @app.get("/api/proxy/image/{item_id}/{img_type}")
 async def proxy_image(item_id: str, img_type: str):
     target_id = item_id
-    # 封面图智能转换逻辑
     if img_type == 'primary' and EMBY_API_KEY:
         try:
             info_url = f"{EMBY_HOST}/emby/Items?Ids={item_id}&Fields=SeriesId,ParentId&Limit=1&api_key={EMBY_API_KEY}"

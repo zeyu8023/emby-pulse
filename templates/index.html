@@ -42,7 +42,7 @@
         <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
             <i class="fa-solid fa-clock-rotate-left text-green-600 mr-2"></i> 最近播放
         </h3>
-        <div class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-8 gap-3" id="recent-container">
+        <div class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-10 gap-2 md:gap-3" id="recent-container">
             <div class="col-span-full text-center py-10 text-gray-400 bg-white rounded-xl border border-dashed border-gray-200">
                 <i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...
             </div>
@@ -126,26 +126,24 @@
             if (json.status === 'success' && json.data.length > 0) {
                 let html = '';
                 json.data.forEach(item => {
-                    // 使用 DisplayId (剧集ID) 和 DisplayTitle (剧集名)
-                    // 如果后端没有返回 DisplayId，就回退到 ItemId
-                    const displayId = item.DisplayId || item.ItemId;
+                    // 使用后端清洗过的 DisplayTitle
                     const displayTitle = item.DisplayTitle || item.ItemName;
-                    
+                    const displayId = item.DisplayId || item.ItemId;
                     const imgUrl = `/api/proxy/image/${displayId}/primary`;
                     const date = new Date(item.DateCreated + 'Z').toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'});
                     
                     html += `
-                    <div class="group relative bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg transition">
+                    <div class="group relative bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg transition">
                         <div class="aspect-[2/3] overflow-hidden bg-gray-100 relative">
                             <img src="${imgUrl}" class="w-full h-full object-cover transition duration-700 group-hover:scale-110" loading="lazy">
                             <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60"></div>
-                            <div class="absolute bottom-2 left-2 right-2">
-                                <p class="text-[10px] text-gray-300"><i class="fa-regular fa-clock mr-1"></i>${date}</p>
-                                <p class="text-white text-xs font-bold truncate mt-0.5">${item.UserName}</p>
+                            <div class="absolute bottom-1.5 left-1.5 right-1.5">
+                                <p class="text-[9px] text-gray-300"><i class="fa-regular fa-clock mr-1"></i>${date}</p>
+                                <p class="text-white text-[10px] font-bold truncate mt-0.5">${item.UserName}</p>
                             </div>
                         </div>
                         <div class="p-2">
-                            <h4 class="text-xs font-bold text-gray-800 line-clamp-1" title="${displayTitle}">${displayTitle}</h4>
+                            <h4 class="text-[10px] font-bold text-gray-800 line-clamp-1" title="${displayTitle}">${displayTitle}</h4>
                         </div>
                     </div>
                     `;
