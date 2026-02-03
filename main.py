@@ -1,19 +1,20 @@
 import sqlite3
 import os
 import uvicorn
-from fastapi import FastAPI, Request
+import requests
+from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
 # === 配置 ===
 PORT = 10307
 DB_PATH = os.getenv("DB_PATH", "/emby-data/playback_reporting.db")
+# 获取 Emby 地址，默认为本地
+EMBY_HOST = os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/')
 
 app = FastAPI()
 
-# 允许跨域
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,7 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 挂载静态文件 (确保 static 目录存在)
+# 挂载静态文件
 if not os.path.exists("static"):
     os.makedirs("static")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -31,16 +32,11 @@ templates = Jinja2Templates(directory="templates")
 
 # === 数据库工具 ===
 def query_db(query, args=(), one=False):
-    """
-    连接 SQLite 数据库并执行查询。
-    如果数据库文件不存在，返回空数据，防止报错。
-    """
     if not os.path.exists(DB_PATH):
-        print(f"⚠️ Warning: Database file not found at {DB_PATH}")
+        # 避免报错，返回 None
         return None
-    
     try:
-        # 使用只读模式 (ro) 打开，避免锁死 Emby
+        # 只读模式连接
         conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
@@ -49,10 +45,10 @@ def query_db(query, args=(), one=False):
         conn.close()
         return (rv[0] if rv else None) if one else rv
     except Exception as e:
-        print(f"❌ Database Error: {e}")
+        print(f"Database Error: {e}")
         return None
 
-# === 页面路由 (HTML渲染) ===
+# === 页面路由 ===
 
 @app.get("/")
 async def page_dashboard(request: Request):
@@ -75,25 +71,17 @@ async def page_report(request: Request):
         "active_page": "report"
     })
 
-# === API 接口 (数据提供) ===
+# === API 数据接口 ===
 
 @app.get("/api/stats/dashboard")
 async def api_dashboard():
-    """获取仪表盘基础数据"""
     try:
-        # 1. 总播放次数
         res_plays = query_db("SELECT COUNT(*) as c FROM PlaybackActivity")
         total_plays = res_plays[0]['c'] if res_plays else 0
         
-        # 2. 活跃用户数 (最近30天)
-        res_users = query_db("""
-            SELECT COUNT(DISTINCT UserId) as c 
-            FROM PlaybackActivity 
-            WHERE DateCreated > date('now', '-30 days')
-        """)
+        res_users = query_db("SELECT COUNT(DISTINCT UserId) as c FROM PlaybackActivity WHERE DateCreated > date('now', '-30 days')")
         active_users = res_users[0]['c'] if res_users else 0
         
-        # 3. 总时长 (秒)
         res_duration = query_db("SELECT SUM(PlayDuration) as c FROM PlaybackActivity")
         total_duration = res_duration[0]['c'] if res_duration and res_duration[0]['c'] else 0
 
@@ -110,7 +98,6 @@ async def api_dashboard():
 
 @app.get("/api/stats/top_movies")
 async def api_top_movies():
-    """获取播放最多的内容"""
     sql = """
     SELECT ItemName, ItemId, COUNT(*) as PlayCount, SUM(PlayDuration) as TotalTime
     FROM PlaybackActivity
@@ -128,6 +115,29 @@ async def api_top_movies():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# === 启动入口 ===
+# 🔥🔥🔥 新增：图片中转接口 🔥🔥🔥
+@app.get("/api/proxy/image/{item_id}/{img_type}")
+async def proxy_image(item_id: str, img_type: str):
+    """
+    中转 Emby 图片，解决内网/HTTPS 混合内容问题
+    img_type: 'primary' (封面) 或 'backdrop' (背景)
+    """
+    if img_type == 'backdrop':
+        emby_url = f"{EMBY_HOST}/emby/Items/{item_id}/Images/Backdrop?maxWidth=800&quality=80"
+    else:
+        emby_url = f"{EMBY_HOST}/emby/Items/{item_id}/Images/Primary?maxHeight=400&quality=90"
+    
+    try:
+        # 后端请求 Emby
+        resp = requests.get(emby_url, timeout=5)
+        if resp.status_code == 200:
+            # 直接把图片数据“转发”给浏览器
+            return Response(content=resp.content, media_type=resp.headers.get("Content-Type", "image/jpeg"))
+        else:
+            return Response(status_code=404)
+    except Exception as e:
+        print(f"Proxy Error: {e}")
+        return Response(status_code=404)
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT)

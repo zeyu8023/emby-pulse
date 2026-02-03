@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}内容风云榜 - Emby Stats{% endblock %}
+{% block title %}内容风云榜 - EmbyPulse{% endblock %}
 
 {% block head %}
 <style>
@@ -38,11 +38,6 @@
 
 {% block scripts %}
 <script>
-    // ⚠️ 必填：你的 Emby 地址，用于前端加载图片
-    // 如果你在内网使用，填内网IP (如 http://192.168.1.5:8096)
-    // 如果是反代，填域名 (如 https://emby.example.com)
-    const EMBY_HOST = ""; // 留空则尝试使用默认占位图
-
     async function loadContent() {
         document.getElementById('loading').classList.remove('hidden');
         document.getElementById('content-area').classList.add('hidden');
@@ -70,21 +65,11 @@
         }
     }
 
-    // 辅助：获取图片链接
-    function getImgUrl(itemId) {
-        if (!EMBY_HOST || !itemId) return 'https://via.placeholder.com/300x450?text=No+Emby+Host';
-        return `${EMBY_HOST}/emby/Items/${itemId}/Images/Primary?maxHeight=400&quality=90`;
-    }
-    
-    function getBackdropUrl(itemId) {
-        if (!EMBY_HOST || !itemId) return '';
-        return `${EMBY_HOST}/emby/Items/${itemId}/Images/Backdrop?maxWidth=800&quality=80`;
-    }
-
     // 渲染 Top 1
     function renderHero(item) {
-        const imgUrl = getImgUrl(item.ItemId);
-        const bgUrl = getBackdropUrl(item.ItemId);
+        // 🔥 使用后端代理接口获取图片
+        const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
+        const bgUrl = `/api/proxy/image/${item.ItemId}/backdrop`;
         
         const html = `
         <div class="relative w-full h-80 rounded-3xl overflow-hidden shadow-xl mb-8 bg-gray-900 group">
@@ -122,12 +107,12 @@
         let html = '';
         items.forEach((item, index) => {
             const rank = index + 2;
-            const imgUrl = getImgUrl(item.ItemId);
+            // 🔥 使用后端代理接口获取图片
+            const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
             
-            // 前三名给不同颜色的牌子
             let rankColor = "text-gray-300";
-            if(rank === 2) rankColor = "text-gray-400"; // 银
-            if(rank === 3) rankColor = "text-amber-700"; // 铜
+            if(rank === 2) rankColor = "text-gray-400";
+            if(rank === 3) rankColor = "text-amber-700";
 
             html += `
             <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center hover:shadow-md transition group">

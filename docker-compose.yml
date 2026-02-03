@@ -1,19 +1,21 @@
 version: '3.8'
 
 services:
-  emby-stats:
-    build: .
-    container_name: emby-stats
+  emby-pulse:
+    image: zeyu8023/emby-stats:latest
+    container_name: emby-pulse
     restart: unless-stopped
-    ports:
-      - "10307:10307"  # 你的指定端口
+    
+    # Host 模式：直接使用宿主机网络
+    network_mode: host
+    
     volumes:
-      # ⚠️ 关键：请修改左边的路径为你 Emby 服务器实际的 data 路径
-      # 通常在 /var/lib/emby/data 或 /config/data (取决于你 Emby 的安装方式)
-      - /path/to/your/emby/data:/emby-data:ro 
+      # 你的 Emby 数据真实路径
+      - /volume1/docker/emby/data:/emby-data:ro
+    
     environment:
       - TZ=Asia/Shanghai
-      # 指定数据库在容器内的路径（对应上面的映射）
       - DB_PATH=/emby-data/playback_reporting.db
-      # 你的 Emby 地址（用于前端显示图片）
-      - EMBY_HOST=http://192.168.xx.xx:8096 
+      # 🔥 新增：Emby 的局域网访问地址
+      # 因为是 Host 模式，127.0.0.1 指的就是 NAS 自己
+      - EMBY_HOST=http://127.0.0.1:8096
