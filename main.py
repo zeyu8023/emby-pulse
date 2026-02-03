@@ -59,83 +59,155 @@ async def page_content(request: Request):
 async def page_report(request: Request):
     return templates.TemplateResponse("report.html", {"request": request, "active_page": "report"})
 
-# === API: 用户列表 (API 补全版) ===
+# === API: 用户列表 ===
 @app.get("/api/users")
 async def api_get_users():
     try:
-        # 1. 从数据库只查 UserId (避开 UserName 不存在的问题)
         sql = "SELECT DISTINCT UserId FROM PlaybackActivity"
         results = query_db(sql)
-        
-        if not results:
-            return {"status": "success", "data": []}
+        if not results: return {"status": "success", "data": []}
 
-        # 2. 从 Emby API 获取所有真实用户，建立 ID->Name 映射
         user_map = {}
         if EMBY_API_KEY:
             try:
                 res = requests.get(f"{EMBY_HOST}/emby/Users?api_key={EMBY_API_KEY}", timeout=3)
                 if res.status_code == 200:
-                    for u in res.json():
-                        user_map[u['Id']] = u['Name']
-            except Exception as e:
-                print(f"Emby User API Failed: {e}")
+                    for u in res.json(): user_map[u['Id']] = u['Name']
+            except: pass
 
-        # 3. 组装数据
         data = []
         for row in results:
             uid = row['UserId']
             if not uid: continue
-            
-            # 如果 API 查到了名字就用 API 的，否则用 ID 截取
             name = user_map.get(uid, f"User {str(uid)[:5]}")
             data.append({"UserId": uid, "UserName": name})
 
-        # 按名字排序
         data.sort(key=lambda x: x['UserName'])
         return {"status": "success", "data": data}
-        
     except Exception as e:
-        print(f"API Error: {e}")
         return {"status": "error", "message": str(e)}
 
-# === API: 仪表盘 ===
+# === API: 仪表盘基础数据 ===
 @app.get("/api/stats/dashboard")
 async def api_dashboard(user_id: Optional[str] = None):
     try:
-        where_clause = "WHERE 1=1"
+        where = "WHERE 1=1"
         params = []
         if user_id and user_id != 'all':
-            where_clause += " AND UserId = ?"
+            where += " AND UserId = ?"
             params.append(user_id)
 
-        res_plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where_clause}", params)
+        res_plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where}", params)
         total_plays = res_plays[0]['c'] if res_plays else 0
         
-        active_sql = f"SELECT COUNT(DISTINCT UserId) as c FROM PlaybackActivity {where_clause} AND DateCreated > date('now', '-30 days')"
+        active_sql = f"SELECT COUNT(DISTINCT UserId) as c FROM PlaybackActivity {where} AND DateCreated > date('now', '-30 days')"
         res_users = query_db(active_sql, params)
         active_users = res_users[0]['c'] if res_users else 0
         
-        res_dur = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {where_clause}", params)
+        res_dur = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {where}", params)
         total_duration = res_dur[0]['c'] if res_dur and res_dur[0]['c'] else 0
 
         return {"status": "success", "data": {"total_plays": total_plays, "active_users": active_users, "total_duration": total_duration}}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# === 🔥 新增 API: 最近播放活动 ===
+@app.get("/api/stats/recent")
+async def api_recent_activity(user_id: Optional[str] = None):
+    try:
+        where = "WHERE 1=1"
+        params = []
+        if user_id and user_id != 'all':
+            where += " AND UserId = ?"
+            params.append(user_id)
+        
+        # 获取最近 12 条记录
+        sql = f"""
+        SELECT DateCreated, UserId, UserName, ItemId, ItemName, ItemType, PlayDuration 
+        FROM PlaybackActivity 
+        {where}
+        ORDER BY DateCreated DESC 
+        LIMIT 12
+        """
+        results = query_db(sql, params)
+        data = []
+        
+        # 为了获取真实用户名 (补全 UserName 为空的记录)
+        user_map = {}
+        if EMBY_API_KEY:
+            try:
+                res = requests.get(f"{EMBY_HOST}/emby/Users?api_key={EMBY_API_KEY}", timeout=2)
+                if res.status_code == 200:
+                    for u in res.json(): user_map[u['Id']] = u['Name']
+            except: pass
+
+        if results:
+            for row in results:
+                item = dict(row)
+                # 补全用户名
+                if not item['UserName'] and item['UserId'] in user_map:
+                    item['UserName'] = user_map[item['UserId']]
+                if not item['UserName']:
+                     item['UserName'] = "Unknown"
+                data.append(item)
+                
+        return {"status": "success", "data": data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# === 🔥 新增 API: 用户排行榜 ===
+@app.get("/api/stats/top_users_list")
+async def api_top_users_list():
+    try:
+        # 统计所有用户的播放时长
+        sql = """
+        SELECT UserId, UserName, COUNT(*) as Plays, SUM(PlayDuration) as TotalTime
+        FROM PlaybackActivity
+        GROUP BY UserId
+        ORDER BY TotalTime DESC
+        LIMIT 5
+        """
+        results = query_db(sql)
+        data = []
+        
+        # 补全用户名逻辑
+        user_map = {}
+        if EMBY_API_KEY:
+            try:
+                res = requests.get(f"{EMBY_HOST}/emby/Users?api_key={EMBY_API_KEY}", timeout=2)
+                if res.status_code == 200:
+                    for u in res.json(): user_map[u['Id']] = u['Name']
+            except: pass
+
+        if results:
+            for row in results:
+                u = dict(row)
+                # 尝试用 API 获取最新名字，因为数据库里的名字可能是旧的或空的
+                real_name = user_map.get(u['UserId'])
+                if real_name:
+                    u['UserName'] = real_name
+                elif not u['UserName']:
+                    u['UserName'] = "Unknown User"
+                
+                data.append(u)
+                
+        return {"status": "success", "data": data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 # === API: 热门内容 ===
 @app.get("/api/stats/top_movies")
 async def api_top_movies(user_id: Optional[str] = None):
-    where_clause = ""
+    where = ""
     params = []
     if user_id and user_id != 'all':
-        where_clause = "WHERE UserId = ?"
+        where = "WHERE UserId = ?"
         params.append(user_id)
 
     sql = f"""
     SELECT ItemName, ItemId, ItemType, COUNT(*) as PlayCount, SUM(PlayDuration) as TotalTime
     FROM PlaybackActivity
-    {where_clause}
+    {where}
     GROUP BY ItemId, ItemName
     ORDER BY PlayCount DESC
     LIMIT 10

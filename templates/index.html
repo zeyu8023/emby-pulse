@@ -1,62 +1,89 @@
 {% extends "layout.html" %}
 {% block title %}仪表盘 - EmbyPulse{% endblock %}
 {% block content %}
-<div class="p-4 md:p-8 space-y-6 md:space-y-8 pb-20">
+<div class="p-4 md:p-8 space-y-8 pb-20">
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-            <h2 class="text-xl md:text-2xl font-bold text-gray-800">概览</h2>
-            <div class="text-xs text-gray-400 mt-1" id="current-date">Loading...</div>
+            <h2 class="text-2xl font-black text-gray-800 tracking-tight">概览</h2>
+            <div class="text-xs text-gray-400 mt-1 font-medium" id="current-date">Loading...</div>
         </div>
         
-        <div class="w-full md:w-auto">
-             <div class="relative z-30">
-                 <select id="dash-user-select" onchange="changeUser()" class="w-full md:w-48 appearance-none bg-white border border-gray-300 text-gray-700 py-2.5 pl-4 pr-10 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold">
-                    <option value="all">🌏 全服数据</option>
-                </select>
-                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
-                    <i class="fa-solid fa-chevron-down text-xs"></i>
-                </div>
+        <div class="w-full md:w-auto relative z-30">
+             <select id="dash-user-select" onchange="changeUser()" class="w-full md:w-48 appearance-none bg-white border border-gray-200 text-gray-700 py-2.5 pl-4 pr-10 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold transition hover:shadow-md cursor-pointer">
+                <option value="all">🌏 全服数据</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                <i class="fa-solid fa-chevron-down text-xs"></i>
             </div>
         </div>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-        <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center">
-            <div>
-                <p class="text-gray-500 text-xs font-bold uppercase mb-1">总播放次数</p>
-                <h3 class="text-3xl font-black text-gray-900" id="stat-plays">-</h3>
-            </div>
-            <div class="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center text-green-600 text-xl"><i class="fa-solid fa-play"></i></div>
+        <div class="bg-gradient-to-br from-green-500 to-emerald-600 p-5 rounded-2xl shadow-lg text-white relative overflow-hidden group">
+            <div class="absolute right-0 top-0 opacity-10 transform translate-x-4 -translate-y-4 group-hover:scale-110 transition duration-500"><i class="fa-solid fa-play text-8xl"></i></div>
+            <p class="text-green-100 text-xs font-bold uppercase mb-1 tracking-wider">总播放</p>
+            <h3 class="text-4xl font-black" id="stat-plays">-</h3>
+            <p class="text-green-100 text-xs mt-2 opacity-80">次播放记录</p>
         </div>
-        <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center">
-            <div>
-                <p class="text-gray-500 text-xs font-bold uppercase mb-1">活跃用户 (30天)</p>
-                <h3 class="text-3xl font-black text-gray-900" id="stat-users">-</h3>
-            </div>
-            <div class="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 text-xl"><i class="fa-solid fa-users"></i></div>
+        <div class="bg-gradient-to-br from-blue-500 to-indigo-600 p-5 rounded-2xl shadow-lg text-white relative overflow-hidden group">
+            <div class="absolute right-0 top-0 opacity-10 transform translate-x-4 -translate-y-4 group-hover:scale-110 transition duration-500"><i class="fa-solid fa-users text-8xl"></i></div>
+            <p class="text-blue-100 text-xs font-bold uppercase mb-1 tracking-wider">活跃用户</p>
+            <h3 class="text-4xl font-black" id="stat-users">-</h3>
+            <p class="text-blue-100 text-xs mt-2 opacity-80">近30天活跃</p>
         </div>
-        <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center">
-            <div>
-                <p class="text-gray-500 text-xs font-bold uppercase mb-1">总时长 (小时)</p>
-                <h3 class="text-3xl font-black text-gray-900" id="stat-duration">-</h3>
-            </div>
-            <div class="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center text-purple-600 text-xl"><i class="fa-solid fa-clock"></i></div>
+        <div class="bg-gradient-to-br from-purple-500 to-pink-600 p-5 rounded-2xl shadow-lg text-white relative overflow-hidden group">
+            <div class="absolute right-0 top-0 opacity-10 transform translate-x-4 -translate-y-4 group-hover:scale-110 transition duration-500"><i class="fa-solid fa-clock text-8xl"></i></div>
+            <p class="text-purple-100 text-xs font-bold uppercase mb-1 tracking-wider">总时长</p>
+            <h3 class="text-4xl font-black" id="stat-duration">-</h3>
+            <p class="text-purple-100 text-xs mt-2 opacity-80">小时沉浸体验</p>
         </div>
     </div>
 
-    <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
-        <h3 class="text-base font-bold text-gray-800 mb-4">流量趋势</h3>
-        <div class="relative h-60 w-full">
-            <canvas id="trendChart"></canvas>
+    <div>
+        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+            <i class="fa-solid fa-clock-rotate-left text-green-600 mr-2"></i> 最近播放
+        </h3>
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4" id="recent-container">
+            <div class="col-span-full text-center py-10 text-gray-400 bg-white rounded-xl border border-dashed border-gray-200">
+                <i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <h3 class="text-base font-bold text-gray-800 mb-4 flex items-center">
+                <i class="fa-solid fa-chart-area text-blue-500 mr-2"></i> 播放趋势
+            </h3>
+            <div class="relative h-64 w-full">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col">
+            <h3 class="text-base font-bold text-gray-800 mb-4 flex items-center">
+                <i class="fa-solid fa-trophy text-amber-500 mr-2"></i> 观影大神榜
+            </h3>
+            <div class="flex-1 overflow-y-auto space-y-3" id="top-users-container">
+                <p class="text-gray-400 text-xs text-center">加载榜单...</p>
+            </div>
         </div>
     </div>
 </div>
 {% endblock %}
+
 {% block scripts %}
 <script>
-    /* JS 代码保持不变 (复用之前的逻辑) */
-    document.getElementById('current-date').innerText = new Date().toLocaleDateString();
-    async function init() { await loadUsers(); fetchDashboardData('all'); initChart(); }
+    document.getElementById('current-date').innerText = new Date().toLocaleDateString(undefined, {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
+
+    async function init() {
+        await loadUsers();
+        fetchDashboardData('all');
+        fetchRecentActivity('all');
+        fetchTopUsers(); // 加载用户排行
+        initChart();
+    }
+
     async function loadUsers() {
         try {
             const res = await fetch('/api/users');
@@ -72,10 +99,15 @@
             }
         } catch (e) { console.error(e); }
     }
-    function changeUser() { const userId = document.getElementById('dash-user-select').value; fetchDashboardData(userId); }
+
+    function changeUser() {
+        const userId = document.getElementById('dash-user-select').value;
+        fetchDashboardData(userId);
+        fetchRecentActivity(userId); // 联动刷新最近播放
+        // 排行榜一般不随筛选变化，始终显示全服排行
+    }
+
     async function fetchDashboardData(userId) {
-        document.getElementById('stat-plays').innerText = '...';
-        document.getElementById('stat-duration').innerText = '...';
         try {
             const response = await fetch(`/api/stats/dashboard?user_id=${userId}`);
             const res = await response.json();
@@ -87,17 +119,123 @@
             }
         } catch (error) { console.error(error); }
     }
+
+    // 🔥 获取最近播放
+    async function fetchRecentActivity(userId) {
+        const container = document.getElementById('recent-container');
+        try {
+            const res = await fetch(`/api/stats/recent?user_id=${userId}`);
+            const json = await res.json();
+            
+            if (json.status === 'success' && json.data.length > 0) {
+                let html = '';
+                json.data.forEach(item => {
+                    const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
+                    // 格式化日期
+                    const date = new Date(item.DateCreated + 'Z').toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'});
+                    
+                    html += `
+                    <div class="group relative bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg transition">
+                        <div class="aspect-[2/3] overflow-hidden bg-gray-100 relative">
+                            <img src="${imgUrl}" class="w-full h-full object-cover transition duration-700 group-hover:scale-110" loading="lazy">
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60"></div>
+                            <div class="absolute bottom-2 left-2 right-2">
+                                <p class="text-[10px] text-gray-300"><i class="fa-regular fa-clock mr-1"></i>${date}</p>
+                                <p class="text-white text-xs font-bold truncate mt-0.5">${item.UserName}</p>
+                            </div>
+                        </div>
+                        <div class="p-2">
+                            <h4 class="text-xs font-bold text-gray-800 line-clamp-1" title="${item.ItemName}">${item.ItemName}</h4>
+                            <p class="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
+                                <span>${Math.round(item.PlayDuration/60)} mins</span>
+                            </p>
+                        </div>
+                    </div>
+                    `;
+                });
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = `<div class="col-span-full py-8 text-center text-sm text-gray-400">暂无最近播放记录</div>`;
+            }
+        } catch (e) {
+            console.error(e);
+            container.innerHTML = `<div class="col-span-full py-8 text-center text-sm text-red-400">加载失败</div>`;
+        }
+    }
+
+    // 🔥 获取用户排行榜
+    async function fetchTopUsers() {
+        const container = document.getElementById('top-users-container');
+        try {
+            const res = await fetch(`/api/stats/top_users_list`);
+            const json = await res.json();
+            
+            if (json.status === 'success' && json.data.length > 0) {
+                let html = '';
+                json.data.forEach((user, index) => {
+                    // 前三名颜色不同
+                    let rankClass = "bg-gray-100 text-gray-500";
+                    if(index === 0) rankClass = "bg-yellow-100 text-yellow-600";
+                    if(index === 1) rankClass = "bg-gray-200 text-gray-600";
+                    if(index === 2) rankClass = "bg-amber-100 text-amber-700";
+
+                    html += `
+                    <div class="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition">
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 rounded-lg ${rankClass} flex items-center justify-center font-black text-sm mr-3 shrink-0">
+                                ${index + 1}
+                            </div>
+                            <div>
+                                <p class="text-sm font-bold text-gray-800 line-clamp-1">${user.UserName}</p>
+                                <p class="text-[10px] text-gray-400">${user.Plays} 次播放</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs font-bold text-green-600">${Math.round(user.TotalTime/3600)}h</p>
+                        </div>
+                    </div>
+                    `;
+                });
+                container.innerHTML = html;
+            }
+        } catch (e) { console.error(e); }
+    }
+
     function initChart() {
         const ctx = document.getElementById('trendChart').getContext('2d');
+        // 创建渐变色
+        let gradient = ctx.createLinearGradient(0, 0, 0, 400);
+        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.2)'); // Blue
+        gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+
         new Chart(ctx, {
             type: 'line',
             data: {
-                labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                datasets: [{ label: 'Trend', data: [12, 19, 3, 5, 2, 30, 45], borderColor: '#52b54b', backgroundColor: 'rgba(82, 181, 75, 0.1)', fill: true, tension: 0.4 }]
+                labels: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+                datasets: [{
+                    label: '热度趋势',
+                    data: [12, 25, 10, 5, 8, 35, 50], // 模拟数据
+                    borderColor: '#3b82f6',
+                    backgroundColor: gradient,
+                    borderWidth: 2,
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: '#3b82f6',
+                    fill: true,
+                    tension: 0.4
+                }]
             },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { borderDash: [4, 4], color: '#f3f4f6' }, ticks: { font: {size: 10} } },
+                    x: { grid: { display: false }, ticks: { font: {size: 10} } }
+                }
+            }
         });
     }
+
     init();
 </script>
 {% endblock %}
