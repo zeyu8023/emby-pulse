@@ -8,20 +8,13 @@
     html, body { height: 100%; margin: 0; background: #f3f4f6; font-family: "Microsoft YaHei", -apple-system, sans-serif !important; overflow: hidden; }
     .app-container { display: flex; height: 100%; }
     
-    /* ================= 预览区 (Preview Area) ================= */
+    /* ================= 预览区 ================= */
     .preview-area {
-        flex: 1; 
-        overflow-y: auto; 
-        display: flex; 
-        /* 🔥 V28 修复：改为顶部对齐，防止长海报头部被切 */
-        justify-content: center; 
-        align-items: flex-start;
+        flex: 1; overflow-y: auto; display: flex; justify-content: center; align-items: flex-start;
         padding: 40px 20px; 
-        /* 🔥 V28 修复：增加顶部留白 */
-        padding-top: 30px; 
-        background-color: #e5e7eb; 
-        -webkit-overflow-scrolling: touch;
-        padding-bottom: 140px; /* 给底部工具栏留足空间 */
+        padding-top: 30px; /* 顶部留白 */
+        background-color: #e5e7eb; -webkit-overflow-scrolling: touch;
+        padding-bottom: 140px; /* 底部给工具栏留位 */
     }
 
     /* ================= PC端控制台 ================= */
@@ -30,90 +23,76 @@
         z-index: 50; display: block; box-shadow: -5px 0 15px rgba(0,0,0,0.05); overflow-y: auto;
     }
 
-    /* ================= 📱 移动端交互：底部固定工具栏 ================= */
+    /* ================= 移动端交互 ================= */
     .mobile-toolbar {
-        display: none; /* Desktop hidden */
-        position: fixed; bottom: 0; left: 0; width: 100%; height: 70px;
-        background: rgba(255, 255, 255, 0.95); /* 半透明磨砂 */
-        backdrop-filter: blur(10px);
-        border-top: 1px solid rgba(0,0,0,0.1);
-        z-index: 500; align-items: center; justify-content: space-between;
-        padding: 0 15px; box-sizing: border-box; 
-        box-shadow: 0 -5px 20px rgba(0,0,0,0.1); /* 加深阴影 */
+        display: none; position: fixed; bottom: 0; left: 0; width: 100%; height: 70px;
+        background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px);
+        border-top: 1px solid rgba(0,0,0,0.1); z-index: 500; 
+        align-items: center; justify-content: space-between;
+        padding: 0 15px; box-sizing: border-box; box-shadow: 0 -5px 20px rgba(0,0,0,0.1);
     }
     .toolbar-btn { flex: 1; height: 44px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
     .btn-config { background: #f3f4f6; color: #333; margin-right: 10px; border: 1px solid #ddd; }
     .btn-save { background: #16a34a; color: white; flex: 1.5; box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3); }
 
-    /* 抽屉容器 */
     .bottom-sheet {
-        display: block; 
-        visibility: hidden;
-        position: fixed; bottom: 0; left: 0; width: 100%;
-        background: white; border-radius: 20px 20px 0 0; 
-        padding: 25px; padding-bottom: 40px;
-        box-shadow: 0 -10px 40px rgba(0,0,0,0.2); 
-        z-index: 600; /* 比工具栏更高 */
-        transform: translateY(100%); 
-        transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+        display: block; visibility: hidden; position: fixed; bottom: 0; left: 0; width: 100%;
+        background: white; border-radius: 20px 20px 0 0; padding: 25px; padding-bottom: 40px;
+        box-shadow: 0 -10px 40px rgba(0,0,0,0.2); z-index: 600;
+        transform: translateY(100%); transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
         max-height: 85vh; overflow-y: auto;
     }
     .bottom-sheet.active { visibility: visible; transform: translateY(0); }
 
-    /* 抽屉头部 */
-    .sheet-header {
-        display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;
-    }
+    .sheet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .sheet-title { font-weight: 900; font-size: 18px; color: #333; }
-    .sheet-close { 
-        width: 30px; height: 30px; border-radius: 50%; background: #f3f4f6; 
-        display: flex; align-items: center; justify-content: center; color: #666; cursor: pointer;
-    }
+    .sheet-close { width: 30px; height: 30px; border-radius: 50%; background: #f3f4f6; display: flex; align-items: center; justify-content: center; color: #666; cursor: pointer; }
 
-    .overlay {
-        position: fixed; inset: 0; background: rgba(0,0,0,0.5);
-        z-index: 550; opacity: 0; pointer-events: none; transition: opacity 0.3s;
-    }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 550; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
     .overlay.active { opacity: 1; pointer-events: auto; }
 
-    /* 📱 Mobile Media Query */
     @media (max-width: 768px) {
         .app-container { flex-direction: column; }
         .control-panel { display: none !important; } 
         .mobile-toolbar { display: flex; } 
-        .preview-area { align-items: flex-start; } /* 确保左上对齐 */
+        .preview-area { align-items: flex-start; } 
     }
 
     /* ================= 海报样式 ================= */
     :root { --theme-bg: #1a1a1a; --theme-card: rgba(255,255,255,0.08); --theme-text: white; --theme-highlight: #eab308; }
+    
     .poster-canvas {
-        width: 400px; min-height: 800px; height: auto;
+        width: 400px; 
+        /* 🔥 V29 修复：高度自适应，不再强制800px */
+        height: auto;
+        min-height: auto; 
+        padding-bottom: 50px; /* 底部呼吸感 */
+        
         background: var(--theme-bg); color: var(--theme-text);
         position: relative; overflow: hidden; display: flex; flex-direction: column;
         box-shadow: 0 30px 60px rgba(0,0,0,0.5);
         line-height: 1.6; font-family: "Microsoft YaHei", sans-serif !important;
-        transition: background 0.3s;
-        /* 防止缩放时边缘模糊 */
-        transform-origin: top center;
+        transition: background 0.3s; transform-origin: top center;
     }
-    #poster-bg-img { position: absolute; inset: 0; z-index: 0; background-size: cover; background-position: center; filter: blur(50px) brightness(0.4); transform: scale(1.2); opacity: 0; transition: opacity 0.5s; }
-    #poster-bg-gradient { position: absolute; inset: 0; z-index: 1; background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.5) 100%); }
+    #poster-bg-img { position: absolute; inset: 0; z-index: 0; background-size: cover; background-position: center; filter: blur(50px) brightness(0.4); transform: scale(1.2); opacity: 0; transition: opacity 0.5s; height: 100%; }
+    #poster-bg-gradient { position: absolute; inset: 0; z-index: 1; background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.5) 100%); height: 100%; }
     .p-content { position: relative; z-index: 10; padding: 40px 30px; display: flex; flex-direction: column; flex: 1; }
     
     .p-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
     .user-box { display: flex; align-items: center; gap: 12px; }
     
-    /* 头像样式 */
+    /* 🔥 V29 修复：头像高对比度样式 */
     .avatar { 
         width: 54px; height: 54px; border-radius: 50%; 
-        /* 🔥 V28 兜底：默认先给个好看的渐变，防止加载期间变灰 */
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background-color: #3b82f6; /* 默认蓝底 */
         display: flex; align-items: center; justify-content: center; 
-        font-size: 24px; font-weight: 900; color: white;
+        font-size: 24px; font-weight: 900; 
+        color: #ffffff !important; /* 强制白字 */
         border: 2px solid rgba(255,255,255,0.8); 
         box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         background-size: cover; background-position: center; 
-        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        text-shadow: 0 1px 3px rgba(0,0,0,0.5); /* 增加文字阴影，防背景干扰 */
+        z-index: 20; position: relative;
     }
     
     .user-info h1 { font-size: 24px; font-weight: 900; margin: 0; padding: 4px 0; }
@@ -150,7 +129,6 @@
     .p-footer { margin-top: auto; padding-top: 30px; text-align: center; opacity: 0.4; font-size: 10px; letter-spacing: 2px; }
     .empty-box { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.4; min-height: 300px; text-align: center; }
 
-    /* Controls Styling */
     .ctrl-label { font-size: 12px; font-weight: bold; color: #666; margin-bottom: 8px; display: block; }
     .btn-group { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
     .btn { flex: 1; padding: 10px; border: 1px solid #ddd; background: #fff; font-weight: bold; border-radius: 8px; font-size: 12px; cursor: pointer; min-width: 60px; white-space: nowrap; }
@@ -170,7 +148,7 @@
                 <div class="p-content">
                     <div class="p-header">
                         <div class="user-box">
-                            <div class="avatar" id="p-avatar" data-type="text">U</div>
+                            <div class="avatar" id="p-avatar">U</div>
                             <div class="user-info">
                                 <h1 id="p-user">User</h1>
                                 <p id="p-period">全量观影报告</p>
@@ -234,7 +212,6 @@
             <div class="sheet-title">配置选项</div>
             <div class="sheet-close" onclick="toggleSheet(false)"><i class="fa-solid fa-xmark"></i></div>
         </div>
-        
         <div id="mobile-controls-container">
             <label class="ctrl-label">选择用户</label>
             <select id="user-select" onchange="changeUser(this.value)" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 15px; background: #f9fafb;">
@@ -288,35 +265,22 @@
     window.addEventListener('resize', () => { fitScale(); checkLayout(); });
     setTimeout(() => { fitScale(); checkLayout(); }, 100);
 
-    // 🔥 V28 修复：抽屉智能开关
     function toggleSheet(forceState) {
         const sheet = document.getElementById('mobile-sheet');
         const overlay = document.getElementById('mobile-overlay');
-        
         let shouldShow = false;
-        if (typeof forceState === 'boolean') {
-            shouldShow = forceState;
-        } else {
-            // 如果已经在显示，就关闭；否则开启
-            shouldShow = !sheet.classList.contains('active');
-        }
+        if (typeof forceState === 'boolean') { shouldShow = forceState; } 
+        else { shouldShow = !sheet.classList.contains('active'); }
 
-        if(shouldShow) {
-            sheet.classList.add('active');
-            overlay.classList.add('active');
-        } else {
-            sheet.classList.remove('active');
-            overlay.classList.remove('active');
-        }
+        if(shouldShow) { sheet.classList.add('active'); overlay.classList.add('active'); } 
+        else { sheet.classList.remove('active'); overlay.classList.remove('active'); }
     }
 
     function fitScale() {
         const wrapper = document.querySelector('.preview-area');
         const w = wrapper.clientWidth;
-        // 留一点边距
         const scale = Math.min((w - 40) / 400, 1);
         document.getElementById('scale-wrapper').style.transform = `scale(${scale})`;
-        // 🔥 V28 修复：确保顶部对齐，不切头
         document.getElementById('scale-wrapper').style.transformOrigin = 'top center';
     }
 
@@ -374,18 +338,16 @@
         }
     }
 
-    function getHashGradient(name) {
+    // 🔥 V29 优化：高对比度纯色，确保白字可见
+    function getHashColor(name) {
+        const colors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#6366f1'];
         let hash = 0;
         for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-        const h1 = Math.abs(hash % 360);
-        const h2 = (h1 + 60) % 360;
-        // 高饱和度糖果色
-        return `linear-gradient(135deg, hsl(${h1}, 80%, 60%), hsl(${h2}, 80%, 60%))`;
+        return colors[Math.abs(hash % colors.length)];
     }
 
     async function loadAvatar() {
         const avatarEl = document.getElementById('p-avatar');
-        // 重置状态
         avatarEl.style.backgroundImage = 'none';
         avatarEl.innerText = currentUserName[0].toUpperCase();
         
@@ -397,10 +359,9 @@
             avatarEl.innerText = '';
             avatarEl.dataset.src = realUrl;
         } else {
-            // 🔥 V28 修复：如果没有图片，使用哈希渐变
-            avatarEl.style.backgroundImage = getHashGradient(currentUserName);
+            // 🔥 V29: 使用纯色背景
+            avatarEl.style.backgroundColor = getHashColor(currentUserName);
             avatarEl.style.color = 'white';
-            avatarEl.style.textShadow = '0 2px 4px rgba(0,0,0,0.3)';
         }
     }
 
@@ -418,8 +379,6 @@
                 });
             }
         });
-        
-        // 🔥 V28 核心修复：确保下拉框填充后，才触发 changeUser
         if(json.data && json.data.length > 0) {
             changeUser(json.data[0].UserId);
         }
@@ -432,9 +391,8 @@
         if(sel.selectedIndex >= 0) {
             currentUserName = sel.options[sel.selectedIndex].text;
         }
-        
         document.getElementById('p-user').innerText = currentUserName;
-        loadAvatar(); // 立即刷新头像
+        loadAvatar();
         loadData();
     }
 
