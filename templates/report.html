@@ -2,62 +2,52 @@
 {% block title %}映迹工坊 - EmbyPulse{% endblock %}
 {% block head %}
 <style>
-    /* 容器布局 - 增加宽度以容纳更多文字 */
+    /* ================= 容器与布局 ================= */
     .poster-container { 
         width: 400px; 
-        height: 700px; 
-        box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.5); 
+        height: 750px; 
         background-color: #111827; /* 深色底色 */
         position: relative;
         overflow: hidden;
         flex-shrink: 0;
         transform-origin: top center;
-        border-radius: 16px; /* 添加圆角让海报更柔和 */
+        box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.5); 
     }
     
-    /* 玻璃卡片 */
+    /* ================= 玻璃卡片 (兼容模式) ================= */
+    /* 既然 html2canvas 不支持 backdrop-filter，我们直接用半透明黑底 */
+    /* 这样预览和下载的效果是一致的 */
     .glass-panel { 
         background: rgba(0, 0, 0, 0.5); 
-        border: 1px solid rgba(255, 255, 255, 0.1); 
+        border: 1px solid rgba(255, 255, 255, 0.15); 
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        backdrop-filter: blur(4px);
         border-radius: 12px;
     }
 
-    .user-option.selected { border-color: #16a34a; background-color: #f0fdf4; }
-    
-    /* 动态背景层 - 移除 CSS filter，改用 JS 处理 */
-    #poster-backdrop-layer {
+    /* ================= 背景层 ================= */
+    /* 我们使用 img 标签而不是 background-image，方便 JS 替换模糊源 */
+    .poster-bg-img {
         position: absolute; inset: 0; 
-        background-size: cover; background-position: center; 
-        /* filter: blur(15px) brightness(0.6);  <-- 移除此行 */
-        transform: scale(1.1); 
-        transition: background-image 0.3s ease;
+        width: 100%; height: 100%;
+        object-fit: cover;
+        /* 预览时的滤镜 (下载时会被 JS 物理模糊替代) */
+        filter: blur(15px) brightness(0.6); 
+        transform: scale(1.1); /* 放大一点防止模糊白边 */
         z-index: 0;
-    }
-    /* 新增一个遮罩层来降低亮度 */
-    #poster-overlay-layer {
-        position: absolute; inset: 0;
-        background-color: rgba(0, 0, 0, 0.4); /* 通过半透明黑色层来压暗 */
-        z-index: 1;
+        transition: opacity 0.3s;
     }
     
     .poster-content { position: relative; z-index: 10; height: 100%; display: flex; flex-direction: column; }
     
+    /* ================= 交互组件 ================= */
+    .user-option.selected { border-color: #16a34a; background-color: #f0fdf4; }
     .bg-option { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s; }
     .bg-option:hover { transform: scale(1.2); }
     .bg-option.active { border-color: #16a34a; transform: scale(1.1); }
 
-    /* 文字截断修复 */
-    .truncate-text {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    .wrap-text {
-        white-space: normal;
-        word-break: break-word;
-    }
+    /* ================= 预览缩放容器 ================= */
+    #preview-wrapper { overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 20px; }
+    #scale-wrapper { transform-origin: top center; transition: transform 0.2s; margin-top: 10px; }
 </style>
 {% endblock %}
 
@@ -90,11 +80,11 @@
             <div>
                 <label class="block text-xs font-bold text-gray-500 uppercase mb-2">氛围设定</label>
                 <div class="flex flex-wrap gap-3">
-                    <div class="bg-option active flex items-center justify-center bg-gray-800 text-white text-[8px] font-bold" onclick="setBg(this, 'auto')" title="使用 Top1 影片背景">AUTO</div>
-                    <div class="bg-option" style="background: linear-gradient(135deg, #1f2937 0%, #111827 100%)" onclick="setBg(this, 'linear-gradient(135deg, #1f2937 0%, #111827 100%)')"></div>
-                    <div class="bg-option" style="background: linear-gradient(to top, #30cfd0 0%, #330867 100%)" onclick="setBg(this, 'linear-gradient(to top, #30cfd0 0%, #330867 100%)')"></div>
-                    <div class="bg-option" style="background: linear-gradient(to top, #5f72bd 0%, #9b23ea 100%)" onclick="setBg(this, 'linear-gradient(to top, #5f72bd 0%, #9b23ea 100%)')"></div>
-                    <div class="bg-option" style="background: linear-gradient(to right, #fa709a 0%, #fee140 100%)" onclick="setBg(this, 'linear-gradient(to right, #fa709a 0%, #fee140 100%)')"></div>
+                    <div class="bg-option active flex items-center justify-center bg-gray-800 text-white text-[8px] font-bold" onclick="setBg('auto', this)" title="使用 Top1 影片背景">AUTO</div>
+                    <div class="bg-option" style="background: linear-gradient(135deg, #1f2937 0%, #111827 100%)" onclick="setBg('linear-gradient(135deg, #1f2937 0%, #111827 100%)', this)"></div>
+                    <div class="bg-option" style="background: linear-gradient(to top, #30cfd0 0%, #330867 100%)" onclick="setBg('linear-gradient(to top, #30cfd0 0%, #330867 100%)', this)"></div>
+                    <div class="bg-option" style="background: linear-gradient(to top, #5f72bd 0%, #9b23ea 100%)" onclick="setBg('linear-gradient(to top, #5f72bd 0%, #9b23ea 100%)', this)"></div>
+                    <div class="bg-option" style="background: linear-gradient(to right, #fa709a 0%, #fee140 100%)" onclick="setBg('linear-gradient(to right, #fa709a 0%, #fee140 100%)', this)"></div>
                 </div>
             </div>
 
@@ -115,21 +105,23 @@
         </button>
     </div>
 
-    <div class="flex-1 bg-gray-100 flex justify-center p-8 overflow-y-auto relative" id="preview-wrapper">
-        <div id="scale-wrapper" class="mt-4 md:mt-0 transition-transform origin-top">
+    <div class="flex-1 bg-gray-100" id="preview-wrapper">
+        <div id="scale-wrapper">
             
-            <div id="capture-area" class="poster-container text-white">
+            <div id="capture-area" class="poster-container">
                 
-                <div id="poster-backdrop-layer"></div>
-                <div id="poster-overlay-layer"></div>
+                <img id="poster-bg-img" class="poster-bg-img" src="" style="display: none;">
+                <div id="poster-bg-gradient" class="absolute inset-0 z-0" style="display: none;"></div>
                 
+                <div class="absolute inset-0 z-[1] opacity-10 bg-repeat" style="background-image: url('https://www.transparenttextures.com/patterns/stardust.png'); pointer-events: none;"></div>
+
                 <div class="poster-content p-8">
                     
                     <div class="flex justify-between items-start mb-8">
                         <div class="flex items-center gap-4">
-                            <div class="w-14 h-14 rounded-full border-2 border-white/30 flex items-center justify-center bg-white/10 text-xl font-bold shadow-lg" id="poster-avatar">U</div>
-                            <div>
-                                <h2 class="text-2xl font-black tracking-tight truncate-text" style="max-width: 180px;" id="poster-user">Username</h2>
+                            <div class="w-14 h-14 rounded-full border-2 border-white/30 flex items-center justify-center bg-white/10 text-xl font-bold shadow-lg shrink-0" id="poster-avatar">U</div>
+                            <div class="min-w-0">
+                                <h2 class="text-2xl font-black tracking-tight text-white truncate" style="max-width: 180px;" id="poster-user">Username</h2>
                                 <p class="text-xs text-white/70 font-medium tracking-widest uppercase mt-1" id="poster-period-text">全量观影报告</p>
                             </div>
                         </div>
@@ -137,13 +129,13 @@
                     </div>
 
                     <div class="grid grid-cols-2 gap-4 mb-8">
-                        <div class="glass-panel rounded-2xl p-4 text-center">
-                            <div class="text-4xl font-black text-white" id="poster-hours">0</div>
-                            <div class="text-[10px] text-white/70 uppercase font-bold mt-1">总时长 (小时)</div>
+                        <div class="glass-panel rounded-2xl py-4 px-2 text-center flex flex-col justify-center">
+                            <div class="text-4xl font-black text-white leading-none mb-1" id="poster-hours">0</div>
+                            <div class="text-[10px] text-white/70 font-bold w-full whitespace-nowrap overflow-visible">总时长 (小时)</div>
                         </div>
-                        <div class="glass-panel rounded-2xl p-4 text-center">
-                            <div class="text-4xl font-black text-white" id="poster-plays">0</div>
-                            <div class="text-[10px] text-white/70 uppercase font-bold mt-1">播放次数</div>
+                        <div class="glass-panel rounded-2xl py-4 px-2 text-center flex flex-col justify-center">
+                            <div class="text-4xl font-black text-white leading-none mb-1" id="poster-plays">0</div>
+                            <div class="text-[10px] text-white/70 font-bold w-full whitespace-nowrap overflow-visible">播放次数</div>
                         </div>
                     </div>
 
@@ -155,36 +147,36 @@
                             <img id="poster-top1-img" src="" class="w-full h-full object-cover" crossOrigin="anonymous" onerror="handleImgError(this)">
                             <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
                             <div class="absolute bottom-4 left-4 right-4">
-                                <h3 class="text-xl font-bold leading-tight wrap-text" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;" id="poster-top1-title">暂无数据</h3>
+                                <h3 class="text-xl font-bold leading-tight line-clamp-1 text-white" id="poster-top1-title">暂无数据</h3>
                                 <p class="text-xs text-white/70 mt-1"><span id="poster-top1-plays">0</span> 次播放 · 挚爱之选</p>
                             </div>
                         </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-4 mb-8 shrink-0">
-                        <div class="glass-panel p-3 rounded-xl flex gap-3 items-center overflow-hidden">
+                        <div class="glass-panel p-2 rounded-xl flex gap-2 items-center overflow-hidden">
                             <div class="w-10 h-14 bg-gray-700 rounded overflow-hidden shrink-0">
                                 <img id="poster-top2-img" class="w-full h-full object-cover" crossOrigin="anonymous" onerror="this.src='https://via.placeholder.com/100x150/374151/9ca3af?text=No'">
                             </div>
                             <div class="min-w-0 flex-1">
-                                <div class="text-[10px] text-white/50 font-bold mb-0.5">Top 2</div>
-                                <div class="text-xs font-bold truncate-text" id="poster-top2-title">-</div>
+                                <div class="text-[9px] text-white/50 font-bold mb-0.5">Top 2</div>
+                                <div class="text-xs font-bold text-white truncate" id="poster-top2-title">-</div>
                             </div>
                         </div>
-                        <div class="glass-panel p-3 rounded-xl flex gap-3 items-center overflow-hidden">
+                        <div class="glass-panel p-2 rounded-xl flex gap-2 items-center overflow-hidden">
                             <div class="w-10 h-14 bg-gray-700 rounded overflow-hidden shrink-0">
                                 <img id="poster-top3-img" class="w-full h-full object-cover" crossOrigin="anonymous" onerror="this.src='https://via.placeholder.com/100x150/374151/9ca3af?text=No'">
                             </div>
                             <div class="min-w-0 flex-1">
-                                <div class="text-[10px] text-white/50 font-bold mb-0.5">Top 3</div>
-                                <div class="text-xs font-bold truncate-text" id="poster-top3-title">-</div>
+                                <div class="text-[9px] text-white/50 font-bold mb-0.5">Top 3</div>
+                                <div class="text-xs font-bold text-white truncate" id="poster-top3-title">-</div>
                             </div>
                         </div>
                     </div>
 
                     <div class="mt-auto shrink-0">
                         <div class="border-t border-white/10 pt-4">
-                            <p id="poster-msg" class="text-xs text-white/80 italic leading-relaxed font-light wrap-text">生活不仅有代码，还有电影。</p>
+                            <p id="poster-msg" class="text-xs text-white/80 italic leading-relaxed font-light line-clamp-2">生活不仅有代码，还有电影。</p>
                             <div class="mt-3 flex items-center justify-between">
                                  <div class="flex items-center gap-2 text-[9px] text-white/40 font-mono">
                                     <i class="fa-solid fa-heart-pulse text-green-500"></i>
@@ -207,15 +199,14 @@
     const quotes = ["生活不仅有代码，还有电影。", "有些鸟儿是关不住的。", "能力越大，责任越大。", "愿原力与你同在。", "念念不忘，必有回响。", "我命由我不由天！", "为了看看阳光，我来到这世上。", "风起，唯有努力生存。", "如果不曾见过太阳，我本可以忍受黑暗。", "好的电影，是一次灵魂的洗礼。"];
     let currentPeriod = 'all';
     let currentUserId = '';
-    let currentTop1Backdrop = '';
+    let currentTop1Img = '';
     let isAutoBg = true;
-    let originalBackdropStyle = '';
 
-    // 自动缩放海报以适应屏幕
+    // 缩放适配
     function resizePoster() {
         if (window.innerWidth < 1100) {
             const wrapper = document.getElementById('preview-wrapper');
-            const scale = (wrapper.clientWidth - 60) / 400;
+            const scale = (wrapper.clientWidth - 40) / 400;
             const el = document.getElementById('scale-wrapper');
             const finalScale = Math.min(scale, 1);
             el.style.transform = `scale(${finalScale})`;
@@ -224,15 +215,13 @@
     window.addEventListener('resize', resizePoster);
     setTimeout(resizePoster, 100);
 
-    // 图片回退逻辑
+    // 图片回退
     function handleImgError(img) {
         img.onerror = null;
         if (img.src.includes('backdrop')) {
             const newSrc = img.src.replace('backdrop', 'primary');
             img.src = newSrc;
-            if (isAutoBg) {
-                 document.getElementById('poster-backdrop-layer').style.backgroundImage = `url('${newSrc}')`;
-            }
+            if (isAutoBg) updateBgImage(newSrc);
         } else {
             img.src = 'https://via.placeholder.com/400x225/374151/9ca3af?text=No+Image';
         }
@@ -250,7 +239,7 @@
                 json.data.forEach((user, index) => {
                     const div = document.createElement('div');
                     div.className = `user-option p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition flex items-center ${index===0?'selected':''}`;
-                    div.innerHTML = `<div class="w-6 h-6 rounded-full bg-green-100 text-green-700 text-xs flex items-center justify-center font-bold mr-3">${user.UserName[0].toUpperCase()}</div><span class="text-gray-700 font-medium text-smTruncate">${user.UserName}</span>`;
+                    div.innerHTML = `<div class="w-6 h-6 rounded-full bg-green-100 text-green-700 text-xs flex items-center justify-center font-bold mr-3">${user.UserName[0].toUpperCase()}</div><span class="text-gray-700 font-medium text-sm truncate">${user.UserName}</span>`;
                     div.onclick = () => selectUser(div, user);
                     container.appendChild(div);
                     if (index === 0) selectUser(div, user);
@@ -301,15 +290,13 @@
                     document.getElementById('poster-top1-plays').innerText = top1.P;
                     
                     const imgUrl = `/api/proxy/image/${top1.ItemId}/backdrop`; 
-                    currentTop1Backdrop = imgUrl;
+                    currentTop1Img = imgUrl;
                     
                     const imgEl = document.getElementById('poster-top1-img');
                     imgEl.onerror = function() { handleImgError(this); };
                     imgEl.src = imgUrl;
                     
-                    if(isAutoBg) {
-                        document.getElementById('poster-backdrop-layer').style.backgroundImage = `url('${imgUrl}')`;
-                    }
+                    if(isAutoBg) updateBgImage(imgUrl);
                 } else {
                     document.getElementById('poster-top1-title').innerText = "暂无数据";
                     document.getElementById('poster-top1-plays').innerText = "0";
@@ -317,10 +304,8 @@
                 }
                 updateSmallCard(1, data.top3); 
                 updateSmallCard(2, data.top3);
-                // 重新计算布局
-                setTimeout(resizePoster, 50);
             }
-        } catch(e) { console.error(e); }
+        } catch(e) {}
     }
 
     function updateSmallCard(index, list) {
@@ -335,137 +320,119 @@
         }
     }
 
+    function updateBgImage(src) {
+        const bgImg = document.getElementById('poster-bg-img');
+        const bgGrad = document.getElementById('poster-bg-gradient');
+        bgGrad.style.display = 'none';
+        bgImg.style.display = 'block';
+        bgImg.src = src;
+    }
+
+    function setBg(val, el) {
+        document.querySelectorAll('.bg-option').forEach(opt => opt.classList.remove('active'));
+        el.classList.add('active');
+        const bgImg = document.getElementById('poster-bg-img');
+        const bgGrad = document.getElementById('poster-bg-gradient');
+        
+        if(val === 'auto') {
+            isAutoBg = true;
+            if(currentTop1Img) updateBgImage(currentTop1Img);
+        } else {
+            isAutoBg = false;
+            bgImg.style.display = 'none';
+            bgGrad.style.display = 'block';
+            bgGrad.style.background = val;
+        }
+    }
+
     function randomQuote() {
         const quote = quotes[Math.floor(Math.random() * quotes.length)];
         document.getElementById('custom-msg').value = quote;
         document.getElementById('poster-msg').innerText = quote;
     }
 
-    function setBg(el, bgStyle) {
-        document.querySelectorAll('.bg-option').forEach(opt => opt.classList.remove('active'));
-        el.classList.add('active');
-        const bgLayer = document.getElementById('poster-backdrop-layer');
-        if(bgStyle === 'auto') {
-            isAutoBg = true;
-            if(currentTop1Backdrop) bgLayer.style.backgroundImage = `url('${currentTop1Backdrop}')`;
-        } else {
-            isAutoBg = false;
-            bgLayer.style.backgroundImage = 'none';
-            bgLayer.style.background = bgStyle;
-        }
+    // 🔥 终极模糊方案：用 Canvas 物理生成模糊图替换原图，然后再截图
+    async function prepareBlurForCapture() {
+        const bgImg = document.getElementById('poster-bg-img');
+        if (bgImg.style.display === 'none' || !bgImg.src) return;
+
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            img.src = bgImg.src;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                // 缩小到 10%
+                const w = img.naturalWidth * 0.1;
+                const h = img.naturalHeight * 0.1;
+                canvas.width = w;
+                canvas.height = h;
+                ctx.drawImage(img, 0, 0, w, h);
+                
+                // 将模糊后的图设置回去
+                const originalSrc = bgImg.src;
+                bgImg.src = canvas.toDataURL();
+                // 暂时移除 CSS filter，避免双重模糊
+                bgImg.style.filter = 'brightness(0.6)'; 
+                
+                resolve(() => {
+                    // 还原函数
+                    bgImg.src = originalSrc;
+                    bgImg.style.filter = 'blur(15px) brightness(0.6)';
+                });
+            };
+            img.onerror = resolve; // 失败则跳过
+        });
     }
 
-    // 🔥 核心修复：手动实现高斯模糊
-    function applyCanvasBlur(element) {
-        const bgLayer = element.querySelector('#poster-backdrop-layer');
-        const bgImageStyle = window.getComputedStyle(bgLayer).backgroundImage;
-        
-        if (bgImageStyle && bgImageStyle !== 'none') {
-            // 提取 URL
-            const urlMatch = bgImageStyle.match(/url\(['"]?(.*?)['"]?\)/);
-            if (urlMatch && urlMatch[1]) {
-                const img = new Image();
-                img.crossOrigin = "Anonymous";
-                img.src = urlMatch[1];
-                
-                return new Promise((resolve) => {
-                    img.onload = () => {
-                        // 创建一个小画布来绘制背景，实现缩放模糊
-                        const canvas = document.createElement('canvas');
-                        const ctx = canvas.getContext('2d');
-                        // 将尺寸缩小到原来的 1/10
-                        canvas.width = img.naturalWidth / 10;
-                        canvas.height = img.naturalHeight / 10;
-                        // 绘制缩小后的图片
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        
-                        // 保存原始样式以便恢复
-                        originalBackdropStyle = bgLayer.style.backgroundImage;
-                        // 将小画布的内容放大并设置为背景，产生模糊效果
-                        bgLayer.style.backgroundImage = `url(${canvas.toDataURL()})`;
-                        // 暂时移除 CSS filter 以避免冲突
-                        bgLayer.style.filter = 'none';
-                        resolve();
-                    };
-                    img.onerror = () => {
-                        // 图片加载失败，直接继续
-                        resolve();
+    async function processCapture(action) {
+        const node = document.getElementById('capture-area');
+        const btnId = action === 'download' ? 'dl-btn' : 'cp-btn';
+        const btn = document.getElementById(btnId);
+        const oldText = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> 处理中...';
+
+        // 1. 物理模糊处理
+        const restoreFn = await prepareBlurForCapture();
+
+        // 2. 截图
+        try {
+            const canvas = await html2canvas(node, {
+                scale: 3, 
+                useCORS: true, 
+                backgroundColor: '#111827',
+                allowTaint: true
+            });
+
+            // 3. 执行动作
+            if (action === 'download') {
+                const link = document.createElement('a');
+                link.download = `EmbyReport_${currentPeriod}_${document.getElementById('poster-user').innerText}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            } else {
+                canvas.toBlob(blob => {
+                    if (navigator.clipboard && navigator.clipboard.write) {
+                        navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                        alert("已复制到剪贴板！");
+                    } else {
+                        alert("复制失败，请使用下载功能。");
                     }
                 });
             }
-        }
-        return Promise.resolve();
-    }
-
-    // 恢复原始背景
-    function restoreBackground(element) {
-        const bgLayer = element.querySelector('#poster-backdrop-layer');
-        if (originalBackdropStyle) {
-            bgLayer.style.backgroundImage = originalBackdropStyle;
-            bgLayer.style.filter = ''; // 恢复 CSS 中的 filter 定义
-            originalBackdropStyle = '';
+        } catch(e) {
+            console.error(e);
+            alert("生成失败，请重试");
+        } finally {
+            // 4. 还原现场
+            if(restoreFn) restoreFn();
+            btn.innerHTML = oldText;
         }
     }
 
-    // 下载逻辑
-    async function downloadPoster() {
-        const node = document.getElementById('capture-area');
-        const btn = document.getElementById('dl-btn');
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> 生成中...';
-        
-        // 1. 应用 Canvas 模糊
-        await applyCanvasBlur(node);
-        
-        // 2. 截图
-        html2canvas(node, { 
-            scale: 3, // 提高分辨率
-            useCORS: true, 
-            backgroundColor: '#111827', // 强制底色
-            allowTaint: true,
-            logging: false
-        }).then(canvas => {
-            // 3. 恢复背景
-            restoreBackground(node);
-            
-            const link = document.createElement('a');
-            link.download = `EmbyReport_${currentPeriod}_${document.getElementById('poster-user').innerText}.png`;
-            link.href = canvas.toDataURL('image/png');
-            link.click();
-            btn.innerHTML = originalText;
-        });
-    }
-
-    // 复制逻辑
-    async function copyPoster() {
-        const node = document.getElementById('capture-area');
-        const btn = document.getElementById('cp-btn');
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> 处理中...';
-
-        // 1. 应用 Canvas 模糊
-        await applyCanvasBlur(node);
-
-        // 2. 截图
-        html2canvas(node, { scale: 3, useCORS: true, backgroundColor: '#111827', allowTaint: true, logging: false }).then(canvas => {
-            // 3. 恢复背景
-            restoreBackground(node);
-
-            canvas.toBlob(blob => {
-                if (navigator.clipboard && navigator.clipboard.write) {
-                    navigator.clipboard.write([
-                        new ClipboardItem({ 'image/png': blob })
-                    ]).then(() => {
-                        btn.innerHTML = '<i class="fa-solid fa-check mr-2"></i> 已复制!';
-                        setTimeout(() => btn.innerHTML = originalText, 2000);
-                    });
-                } else {
-                    alert("当前浏览器不支持直接复制图片，请使用下载功能。");
-                    btn.innerHTML = originalText;
-                }
-            });
-        });
-    }
+    function downloadPoster() { processCapture('download'); }
+    function copyPoster() { processCapture('copy'); }
     
     init();
 </script>
