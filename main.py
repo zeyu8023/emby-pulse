@@ -2,7 +2,6 @@ import sqlite3
 import os
 import uvicorn
 import requests
-import datetime
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,7 +16,7 @@ EMBY_HOST = os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/')
 EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip()
 FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
-print(f"--- EmbyPulse Ultimate v3 ---")
+print(f"--- EmbyPulse Ultimate v4 ---")
 print(f"DB: {DB_PATH}")
 print(f"API: {'✅ 已加载' if EMBY_API_KEY else '❌ 未加载'}")
 
@@ -153,12 +152,20 @@ async def api_live_sessions():
         return {"status": "success", "data": sessions}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-# === 🔥 新增：海报专用聚合数据接口 ===
+# === 🔥 升级版 API: 海报数据支持时间筛选 ===
 @app.get("/api/stats/poster_data")
-async def api_poster_data(user_id: Optional[str] = None):
+async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
+        
+        # ⏳ 时间过滤逻辑
+        if period == 'week':
+            where += " AND DateCreated > date('now', '-7 days')"
+        elif period == 'month':
+            where += " AND DateCreated > date('now', '-30 days')"
+        elif period == 'year':
+            where += " AND DateCreated > date('now', '-1 year')"
         
         # 1. 基础统计
         stats_sql = f"SELECT COUNT(*) as Plays, SUM(PlayDuration) as Duration FROM PlaybackActivity {where}"
@@ -176,22 +183,15 @@ async def api_poster_data(user_id: Optional[str] = None):
         top_res = query_db(top_sql, params)
         top3 = [dict(r) for r in top_res] if top_res else []
 
-        # 3. 关键词分析 (Simple Tags)
+        # 3. 关键词
         tags = []
         if total_hours > 500: tags.append("影视肝帝")
         elif total_hours > 100: tags.append("忠实观众")
         
-        # 深夜占比
         night_sql = f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND strftime('%H', DateCreated) BETWEEN '00' AND '05'"
         night_res = query_db(night_sql, params)
         if night_res and total_plays > 0 and (night_res[0]['c'] / total_plays > 0.2): tags.append("修仙党")
         
-        # 最活跃时段
-        hour_sql = f"SELECT strftime('%H', DateCreated) as Hour, COUNT(*) as c FROM PlaybackActivity {where} GROUP BY Hour ORDER BY c DESC LIMIT 1"
-        hour_res = query_db(hour_sql, params)
-        active_hour = f"{hour_res[0]['Hour']}点" if hour_res else "未知"
-
-        # 如果没有 tag，补一个
         if not tags: tags.append("佛系观众")
 
         return {
@@ -200,12 +200,13 @@ async def api_poster_data(user_id: Optional[str] = None):
                 "plays": total_plays,
                 "hours": total_hours,
                 "top3": top3,
-                "tags": tags[:2], # 只取前2个
-                "active_hour": active_hour
+                "tags": tags[:2],
+                "active_hour": "--" 
             }
         }
     except Exception as e: return {"status": "error", "message": str(e)}
 
+# === 现有其他接口保持不变 ===
 @app.get("/api/stats/monthly_stats")
 async def api_monthly_stats(user_id: Optional[str] = None):
     try:
@@ -303,7 +304,8 @@ async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month
 
 @app.get("/api/proxy/image/{item_id}/{img_type}")
 async def proxy_image(item_id: str, img_type: str):
-    target_id, attempted_smart = item_id, False
+    target_id = item_id
+    attempted_smart = False
     if img_type == 'primary' and EMBY_API_KEY:
         try:
             info_resp = requests.get(f"{EMBY_HOST}/emby/Items?Ids={item_id}&Fields=SeriesId,ParentId&Limit=1&api_key={EMBY_API_KEY}", timeout=2)

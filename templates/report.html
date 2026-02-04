@@ -12,11 +12,12 @@
         overflow: hidden;
     }
     
+    /* 🔥 修复：加深玻璃背景，让白字可见 */
     .glass-panel { 
-        background: rgba(255, 255, 255, 0.08); 
+        background: rgba(0, 0, 0, 0.4); 
         backdrop-filter: blur(16px); 
-        border: 1px solid rgba(255, 255, 255, 0.15); 
-        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.1); 
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
     }
 
     .user-option.selected { border-color: #16a34a; background-color: #f0fdf4; }
@@ -24,7 +25,7 @@
     #poster-backdrop-layer {
         position: absolute; inset: 0; 
         background-size: cover; background-position: center; 
-        filter: blur(20px) brightness(0.6);
+        filter: blur(20px) brightness(0.7); /* 🔥 修复：降低亮度，突出文字 */
         transform: scale(1.1); 
         transition: background-image 0.8s ease;
         z-index: 0;
@@ -32,7 +33,6 @@
     
     .poster-content { position: relative; z-index: 10; }
     
-    /* 背景选择球 */
     .bg-option { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s; }
     .bg-option:hover { transform: scale(1.2); }
     .bg-option.active { border-color: #16a34a; transform: scale(1.1); }
@@ -56,6 +56,16 @@
             </div>
 
             <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-2">时间范围</label>
+                <div class="grid grid-cols-4 gap-2">
+                    <button onclick="setPeriod('all')" class="period-btn bg-gray-900 text-white text-xs py-2 rounded-lg font-bold" data-p="all">全量</button>
+                    <button onclick="setPeriod('year')" class="period-btn bg-gray-100 text-gray-500 text-xs py-2 rounded-lg font-bold hover:bg-gray-200" data-p="year">年度</button>
+                    <button onclick="setPeriod('month')" class="period-btn bg-gray-100 text-gray-500 text-xs py-2 rounded-lg font-bold hover:bg-gray-200" data-p="month">本月</button>
+                    <button onclick="setPeriod('week')" class="period-btn bg-gray-100 text-gray-500 text-xs py-2 rounded-lg font-bold hover:bg-gray-200" data-p="week">本周</button>
+                </div>
+            </div>
+
+            <div>
                 <label class="block text-xs font-bold text-gray-500 uppercase mb-2">海报氛围</label>
                 <div class="flex flex-wrap gap-3">
                     <div class="bg-option active" style="background: linear-gradient(135deg, #1f2937 0%, #111827 100%)" onclick="setBg(this, 'linear-gradient(135deg, #1f2937 0%, #111827 100%)')"></div>
@@ -69,7 +79,7 @@
 
             <div>
                 <div class="flex justify-between items-center mb-2">
-                    <label class="block text-xs font-bold text-gray-500 uppercase">年度寄语</label>
+                    <label class="block text-xs font-bold text-gray-500 uppercase">寄语</label>
                     <button onclick="randomQuote()" class="text-xs text-blue-600 hover:text-blue-800"><i class="fa-solid fa-dice mr-1"></i> 随机灵感</button>
                 </div>
                 <textarea id="custom-msg" rows="3" class="w-full border-gray-300 rounded-lg text-sm p-3 border focus:ring-green-500 focus:border-green-500 shadow-sm" oninput="document.getElementById('poster-msg').innerText = this.value">生活不仅有代码，还有电影。</textarea>
@@ -95,31 +105,29 @@
                             <div class="w-14 h-14 rounded-full border-2 border-white/30 flex items-center justify-center bg-white/10 text-xl font-bold shadow-lg" id="poster-avatar">U</div>
                             <div>
                                 <h2 class="text-2xl font-black tracking-tight" id="poster-user">Username</h2>
-                                <p class="text-xs text-white/60 font-medium tracking-widest uppercase mt-1">2026 年度观影报告</p>
+                                <p class="text-xs text-white/60 font-medium tracking-widest uppercase mt-1" id="poster-period-text">观影报告</p>
                             </div>
                         </div>
-                        <div class="glass-panel px-3 py-1 rounded-full text-xs font-bold text-yellow-300" id="poster-tag">影视肝帝</div>
+                        <div class="glass-panel px-3 py-1 rounded-full text-xs font-bold text-yellow-300" id="poster-tag">观影达人</div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-4 mb-8">
                         <div class="glass-panel rounded-2xl p-4 text-center">
                             <div class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white to-white/70" id="poster-hours">0</div>
-                            <div class="text-[10px] text-white/50 uppercase font-bold mt-1">总时长 (小时)</div>
+                            <div class="text-[10px] text-white/70 uppercase font-bold mt-1">总时长 (小时)</div>
                         </div>
                         <div class="glass-panel rounded-2xl p-4 text-center">
                             <div class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white to-white/70" id="poster-plays">0</div>
-                            <div class="text-[10px] text-white/50 uppercase font-bold mt-1">播放次数</div>
+                            <div class="text-[10px] text-white/70 uppercase font-bold mt-1">播放次数</div>
                         </div>
                     </div>
 
                     <div class="flex-1 flex flex-col justify-center mb-6">
                         <div class="text-xs font-bold text-yellow-400 mb-3 flex items-center gap-2">
-                            <i class="fa-solid fa-crown"></i> 年度最爱 Top 1
+                            <i class="fa-solid fa-crown"></i> 最爱 Top 1
                         </div>
                         <div class="relative w-full aspect-[16/9] rounded-2xl overflow-hidden shadow-2xl border border-white/20 group bg-black/20">
-                            <img id="poster-top1-img" src="" 
-                                 class="w-full h-full object-cover transition duration-700"
-                                 onerror="handleImgError(this, 'backdrop')">
+                            <img id="poster-top1-img" src="" class="w-full h-full object-cover transition duration-700" onerror="handleImgError(this, 'backdrop')">
                             <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent"></div>
                             <div class="absolute bottom-4 left-4 right-4">
                                 <h3 class="text-xl font-bold leading-tight line-clamp-1" id="poster-top1-title">暂无数据</h3>
@@ -134,7 +142,7 @@
                                 <img id="poster-top2-img" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/100x150/374151/9ca3af?text=No'">
                             </div>
                             <div class="min-w-0">
-                                <div class="text-[10px] text-white/40 font-bold mb-0.5">Top 2</div>
+                                <div class="text-[10px] text-white/50 font-bold mb-0.5">Top 2</div>
                                 <div class="text-xs font-bold truncate" id="poster-top2-title">-</div>
                             </div>
                         </div>
@@ -143,7 +151,7 @@
                                 <img id="poster-top3-img" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/100x150/374151/9ca3af?text=No'">
                             </div>
                             <div class="min-w-0">
-                                <div class="text-[10px] text-white/40 font-bold mb-0.5">Top 3</div>
+                                <div class="text-[10px] text-white/50 font-bold mb-0.5">Top 3</div>
                                 <div class="text-xs font-bold truncate" id="poster-top3-title">-</div>
                             </div>
                         </div>
@@ -152,10 +160,8 @@
                     <div class="mt-auto">
                         <div class="flex justify-between items-end border-t border-white/10 pt-4">
                             <div class="w-2/3 pr-4">
-                                <p id="poster-msg" class="text-xs text-white/70 italic leading-relaxed font-light">生活不仅有代码，还有电影。</p>
+                                <p id="poster-msg" class="text-xs text-white/80 italic leading-relaxed font-light">生活不仅有代码，还有电影。</p>
                                 <div class="mt-3 flex items-center gap-2 text-[9px] text-white/40 font-mono">
-                                    <span>活跃: <span id="poster-active-hour" class="text-white">--点</span></span>
-                                    <span>•</span>
                                     <span>EmbyPulse</span>
                                 </div>
                             </div>
@@ -175,21 +181,16 @@
 {% block scripts %}
 <script>
     const quotes = ["生活不仅有代码，还有电影。", "有些鸟儿是关不住的。", "能力越大，责任越大。", "愿原力与你同在。", "念念不忘，必有回响。", "我命由我不由天！", "为了看看阳光，我来到这世上。", "风起，唯有努力生存。", "如果不曾见过太阳，我本可以忍受黑暗。", "好的电影，是一次灵魂的洗礼。"];
+    let currentPeriod = 'all';
+    let currentUserId = '';
 
-    // 🔥 核心修复：图片错误处理函数
     function handleImgError(img, type) {
-        // 防止无限循环
         img.onerror = null;
-        
-        // 如果当前是 backdrop (横图) 裂了，尝试换成 primary (竖图)
         if (img.src.includes('backdrop')) {
-            console.log('Backdrop failed, trying primary...');
             img.src = img.src.replace('backdrop', 'primary');
-            // 同时更新背景图也为 primary
             const bgLayer = document.getElementById('poster-backdrop-layer');
             bgLayer.style.backgroundImage = `url('${img.src}')`;
         } else {
-            // 如果 primary 也裂了，显示灰色占位
             img.src = 'https://via.placeholder.com/400x225/374151/9ca3af?text=No+Image';
         }
     }
@@ -231,39 +232,50 @@
         element.classList.add('selected');
         document.getElementById('poster-user').innerText = user.UserName;
         document.getElementById('poster-avatar').innerText = user.UserName[0].toUpperCase();
-        loadPosterData(user.UserId);
+        currentUserId = user.UserId;
+        loadPosterData();
     }
 
-    async function loadPosterData(userId) {
+    function setPeriod(period) {
+        currentPeriod = period;
+        document.querySelectorAll('.period-btn').forEach(btn => {
+            if(btn.dataset.p === period) {
+                btn.classList.add('bg-gray-900', 'text-white');
+                btn.classList.remove('bg-gray-100', 'text-gray-500');
+            } else {
+                btn.classList.remove('bg-gray-900', 'text-white');
+                btn.classList.add('bg-gray-100', 'text-gray-500');
+            }
+        });
+        
+        const periodTextMap = {'all': '全量观影报告', 'year': '年度观影报告', 'month': '本月观影报告', 'week': '本周观影报告'};
+        document.getElementById('poster-period-text').innerText = periodTextMap[period];
+        loadPosterData();
+    }
+
+    async function loadPosterData() {
+        if(!currentUserId) return;
         try {
-            const res = await fetch(`/api/stats/poster_data?user_id=${userId}`);
+            const res = await fetch(`/api/stats/poster_data?user_id=${currentUserId}&period=${currentPeriod}`);
             const json = await res.json();
             
             if(json.status === 'success') {
                 const data = json.data;
-                
                 document.getElementById('poster-plays').innerText = data.plays;
                 document.getElementById('poster-hours').innerText = data.hours;
                 document.getElementById('poster-tag').innerText = data.tags[0] || "观影达人";
-                document.getElementById('poster-active-hour').innerText = data.active_hour;
 
                 if(data.top3 && data.top3.length > 0) {
                     const top1 = data.top3[0];
                     document.getElementById('poster-top1-title').innerText = top1.ItemName;
                     document.getElementById('poster-top1-plays').innerText = top1.P;
                     
-                    // 默认尝试加载 Backdrop (横图)
                     const imgUrl = `/api/proxy/image/${top1.ItemId}/backdrop`; 
                     const imgEl = document.getElementById('poster-top1-img');
-                    
-                    // 重置 onerror 以便再次触发
                     imgEl.onerror = function() { handleImgError(this, 'backdrop'); };
                     imgEl.src = imgUrl;
-                    
-                    // 背景同步
                     document.getElementById('poster-backdrop-layer').style.backgroundImage = `url('${imgUrl}')`;
                 }
-
                 updateSmallCard(1, data.top3); 
                 updateSmallCard(2, data.top3); 
             }
@@ -302,7 +314,7 @@
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> 生成中...';
         html2canvas(node, { scale: 3, useCORS: true, backgroundColor: null }).then(canvas => {
             const link = document.createElement('a');
-            link.download = `EmbyReport_2026_${userName}.png`;
+            link.download = `EmbyReport_${currentPeriod}_${userName}.png`;
             link.href = canvas.toDataURL('image/png');
             link.click();
             btn.innerHTML = originalText;
