@@ -18,7 +18,7 @@ EMBY_HOST = os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/')
 EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip()
 FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
-print(f"--- EmbyPulse V22 (Final Polish) ---")
+print(f"--- EmbyPulse V23 (Detail Polish) ---")
 print(f"DB Path: {DB_PATH}")
 
 app = FastAPI()
@@ -87,7 +87,7 @@ async def api_get_users():
         return {"status": "success", "data": data}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-# ================= API: 仪表盘 (Dashboard) =================
+# ================= API: 仪表盘 =================
 @app.get("/api/stats/dashboard")
 async def api_dashboard(user_id: Optional[str] = None):
     try:
@@ -153,7 +153,7 @@ async def api_live_sessions():
     except: pass
     return {"status": "success", "data": []}
 
-# ================= API: 内容排行 =================
+# ================= API: 排行 & 洞察 & 图表 =================
 @app.get("/api/stats/top_movies")
 async def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by: str = 'count'):
     try:
@@ -190,7 +190,6 @@ async def api_top_movies(user_id: Optional[str] = None, category: str = 'all', s
         return {"status": "success", "data": result_list[:50]}
     except: return {"status": "error", "data": []}
 
-# ================= API: 数据洞察 =================
 @app.get("/api/stats/user_details")
 async def api_user_details(user_id: Optional[str] = None):
     try:
@@ -218,7 +217,6 @@ async def api_user_details(user_id: Optional[str] = None):
         return {"status": "success", "data": {"hourly": hourly_data, "devices": [dict(r) for r in device_res] if device_res else [], "logs": logs_data}}
     except: return {"status": "error", "data": {"hourly": {}, "devices": [], "logs": []}}
 
-# ================= API: 图表 =================
 @app.get("/api/stats/chart")
 async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month'):
     try:
@@ -308,7 +306,6 @@ async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
         }
     except Exception as e: return {"status": "error", "message": str(e), "data": {"plays": 0, "hours": 0, "server_plays": 0, "top_list": []}}
 
-# ================= 辅助 API =================
 @app.get("/api/stats/top_users_list")
 async def api_top_users_list():
     try:
