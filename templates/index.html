@@ -70,7 +70,7 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-            <h3 class="text-base font-bold text-gray-800 mb-4 flex items-center"><i class="fa-solid fa-chart-area text-blue-500 mr-2"></i> 播放趋势</h3>
+            <h3 class="text-base font-bold text-gray-800 mb-4 flex items-center"><i class="fa-solid fa-chart-area text-blue-500 mr-2"></i> 播放趋势 (近7天)</h3>
             <div class="relative h-64 w-full"><canvas id="trendChart"></canvas></div>
         </div>
         <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col">
@@ -83,15 +83,19 @@
 
 {% block scripts %}
 <script>
+    let trendChart = null; // 全局图表变量
+
     document.getElementById('current-date').innerText = new Date().toLocaleDateString(undefined, {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
 
     async function init() {
         await loadUsers();
+        // 初始化全服数据
         fetchDashboardData('all');
         fetchRecentActivity('all');
         fetchTopUsers();
-        initChart();
-        fetchLive(); setInterval(fetchLive, 10000);
+        initTrendChart('all'); // 动态加载图表
+        fetchLive(); 
+        setInterval(fetchLive, 10000);
     }
 
     async function fetchLive() {
@@ -100,17 +104,66 @@
             const json = await res.json();
             const container = document.getElementById('live-container');
             const section = document.getElementById('live-section');
+            
             if(json.status === 'success' && json.data.length > 0) {
                 let html = '';
                 json.data.forEach(s => {
-                    const imgUrl = `/api/proxy/image/${s.ItemId}/backdrop`;
-                    const transcodeBadge = s.IsTranscoding ? `<span class="bg-yellow-500 text-white text-[10px] px-1.5 rounded ml-2">转码</span>` : `<span class="bg-green-500 text-white text-[10px] px-1.5 rounded ml-2">直通</span>`;
-                    const title = s.SeriesName ? `${s.SeriesName} - ${s.ItemName}` : s.ItemName;
-                    html += `<div class="bg-white rounded-xl shadow-md border border-red-100 overflow-hidden flex relative"><div class="w-1/3 bg-gray-200 relative"><img src="${imgUrl}" class="w-full h-full object-cover"></div><div class="w-2/3 p-3 flex flex-col justify-between"><div><div class="flex items-center mb-1"><span class="text-xs font-bold text-gray-500"><i class="fa-solid fa-user mr-1"></i>${s.User}</span>${transcodeBadge}</div><h4 class="text-sm font-black text-gray-800 line-clamp-2 leading-tight">${title}</h4></div><div class="mt-2"><div class="flex justify-between text-[10px] text-gray-400 mb-1"><span>${s.Device}</span><span>${s.Percentage}%</span></div><div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden"><div class="bg-red-500 h-1.5 rounded-full transition-all duration-1000" style="width: ${s.Percentage}%"></div></div></div></div></div>`;
+                    // 🔥 修复字段读取逻辑：对接 Emby 原始大写字段
+                    const item = s.NowPlayingItem || {};
+                    const playState = s.PlayState || {};
+                    
+                    // 智能获取图片ID（剧集优先显示剧集海报）
+                    const targetId = item.SeriesId || item.ParentId || s.ItemId || item.Id;
+                    const imgUrl = `/api/proxy/image/${targetId}/backdrop`;
+                    
+                    // 转码/直通状态判断
+                    const isTranscoding = playState.IsTranscoding || s.IsTranscoding;
+                    const transcodeBadge = isTranscoding ? 
+                        `<span class="bg-yellow-500 text-white text-[10px] px-1.5 rounded ml-2">转码</span>` : 
+                        `<span class="bg-green-500 text-white text-[10px] px-1.5 rounded ml-2">直通</span>`;
+                    
+                    // 标题处理
+                    const title = item.SeriesName ? `${item.SeriesName} - ${item.Name}` : (item.Name || '未知内容');
+                    
+                    // 播放百分比计算
+                    let percentage = 0;
+                    if (playState.RunTimeTicks > 0) {
+                        percentage = Math.round((playState.PositionTicks / playState.RunTimeTicks) * 100);
+                    }
+
+                    html += `
+                    <div class="bg-white rounded-xl shadow-md border border-red-100 overflow-hidden flex relative">
+                        <div class="w-1/3 bg-gray-200 relative">
+                            <img src="${imgUrl}" class="w-full h-full object-cover" onerror="this.src='https://img.hotimg.com/a444d32a033994d5b.png'">
+                        </div>
+                        <div class="w-2/3 p-3 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center mb-1">
+                                    <span class="text-xs font-bold text-gray-500">
+                                        <i class="fa-solid fa-user mr-1"></i>${s.UserName || s.User || '未知用户'}
+                                    </span>
+                                    ${transcodeBadge}
+                                </div>
+                                <h4 class="text-sm font-black text-gray-800 line-clamp-2 leading-tight">${title}</h4>
+                            </div>
+                            <div class="mt-2">
+                                <div class="flex justify-between text-[10px] text-gray-400 mb-1">
+                                    <span>${s.DeviceName || s.Device || '未知设备'}</span>
+                                    <span>${percentage}%</span>
+                                </div>
+                                <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                                    <div class="bg-red-500 h-1.5 rounded-full transition-all duration-1000" style="width: ${percentage}%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
                 });
-                container.innerHTML = html; section.classList.remove('hidden');
-            } else { section.classList.add('hidden'); }
-        } catch(e) {}
+                container.innerHTML = html; 
+                section.classList.remove('hidden');
+            } else { 
+                section.classList.add('hidden'); 
+            }
+        } catch(e) { console.error("Live Fetch Error:", e); }
     }
 
     async function loadUsers() {
@@ -133,6 +186,7 @@
         const userId = document.getElementById('dash-user-select').value;
         fetchDashboardData(userId);
         fetchRecentActivity(userId);
+        initTrendChart(userId); // 切换用户时刷新图表
     }
     
     async function fetchDashboardData(userId) {
@@ -156,16 +210,18 @@
             if (json.status === 'success' && json.data.length > 0) {
                 let html = '';
                 json.data.forEach(item => {
-                    // 🔥 使用聚合后的 DisplayName (如果后端支持)，否则回退 ItemName
                     const displayTitle = item.DisplayName || item.ItemName;
-                    
                     const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
-                    const date = new Date(item.DateCreated + 'Z').toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'});
+                    
+                    // 修正时间解析逻辑，不再叠加 Z
+                    let dateStr = item.DateCreated;
+                    if (dateStr && dateStr.includes(' ')) dateStr = dateStr.replace(' ', 'T');
+                    const date = new Date(dateStr).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'});
                     
                     html += `
                     <div class="recent-card group relative bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg transition">
                         <div class="aspect-[2/3] overflow-hidden bg-gray-100 relative">
-                            <img src="${imgUrl}" class="w-full h-full object-cover transition duration-700 group-hover:scale-110" loading="lazy" onerror="this.closest('.recent-card').remove()">
+                            <img src="${imgUrl}" class="w-full h-full object-cover transition duration-700 group-hover:scale-110" loading="lazy" onerror="this.src='https://img.hotimg.com/a444d32a033994d5b.png'">
                             <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60"></div>
                             <div class="absolute bottom-1.5 left-1.5 right-1.5">
                                 <p class="text-[9px] text-gray-300"><i class="fa-regular fa-clock mr-1"></i>${date}</p>
@@ -206,19 +262,57 @@
         } catch (e) { console.error(e); }
     }
     
-    function initChart() {
+    async function initTrendChart(userId) {
         const ctx = document.getElementById('trendChart').getContext('2d');
-        let gradient = ctx.createLinearGradient(0, 0, 0, 400);
-        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
-        gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
-                datasets: [{ label: '热度趋势', data: [12, 25, 10, 5, 8, 35, 50], borderColor: '#3b82f6', backgroundColor: gradient, borderWidth: 2, pointBackgroundColor: '#fff', pointBorderColor: '#3b82f6', fill: true, tension: 0.4 }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { borderDash: [4, 4], color: '#f3f4f6' }, ticks: { font: {size: 10} } }, x: { grid: { display: false }, ticks: { font: {size: 10} } } } }
-        });
+        if(trendChart) trendChart.destroy(); // 销毁旧图表
+
+        try {
+            // 🔥 调用真实后端趋势接口
+            const res = await fetch(`/api/stats/trend?user_id=${userId}`);
+            const json = await res.json();
+            const data = json.data || {};
+            
+            const labels = Object.keys(data);
+            const values = Object.values(data);
+
+            let gradient = ctx.createLinearGradient(0, 0, 0, 400);
+            gradient.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
+            gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels.length > 0 ? labels : ['无数据'],
+                    datasets: [{ 
+                        label: '播放频次', 
+                        data: values.length > 0 ? values : [0], 
+                        borderColor: '#3b82f6', 
+                        backgroundColor: gradient, 
+                        borderWidth: 2, 
+                        pointBackgroundColor: '#fff', 
+                        pointBorderColor: '#3b82f6', 
+                        fill: true, 
+                        tension: 0.4 
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    plugins: { legend: { display: false } }, 
+                    scales: { 
+                        y: { 
+                            beginAtZero: true, 
+                            grid: { borderDash: [4, 4], color: '#f3f4f6' }, 
+                            ticks: { font: {size: 10}, stepSize: 1 } 
+                        }, 
+                        x: { 
+                            grid: { display: false }, 
+                            ticks: { font: {size: 10} } 
+                        } 
+                    } 
+                }
+            });
+        } catch(e) { console.error("Chart Load Error:", e); }
     }
     init();
 </script>

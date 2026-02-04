@@ -103,7 +103,6 @@
 
     function switchChart(dim) {
         currentDim = dim;
-        // 更新按钮样式
         document.querySelectorAll('.chart-btn').forEach(btn => {
             btn.classList.remove('bg-white', 'shadow-sm', 'text-gray-900', 'font-bold');
             btn.classList.add('text-gray-500');
@@ -112,7 +111,7 @@
         activeBtn.classList.add('bg-white', 'shadow-sm', 'text-gray-900', 'font-bold');
         activeBtn.classList.remove('text-gray-500');
         
-        loadTrendChart(); // 只重新加载趋势图
+        loadTrendChart();
     }
 
     async function loadAllData() {
@@ -138,7 +137,7 @@
             const data = json.data || {};
             
             const labels = Object.keys(data);
-            const values = Object.values(data).map(v => Math.round(v/3600)); // 转小时
+            const values = Object.values(data).map(v => Math.round(v/3600));
 
             const ctx = document.getElementById('trendChart').getContext('2d');
             if(charts.trend) charts.trend.destroy();
@@ -164,7 +163,7 @@
                     plugins: { legend: {display: false} }
                 }
             });
-        } catch(e) {}
+        } catch(e) { console.error("Trend Chart Error:", e); }
     }
 
     async function loadDetails(userId) {
@@ -177,7 +176,7 @@
                 renderDeviceChart(data.devices);
                 renderLogs(data.logs);
             }
-        } catch (e) {}
+        } catch (e) { console.error("Details Load Error:", e); }
     }
 
     async function loadBadges(userId) {
@@ -188,29 +187,65 @@
             if(json.status === 'success' && json.data.length > 0) {
                 let html = '';
                 json.data.forEach(b => {
-                    html += `<div class="flex items-center space-x-2 px-3 py-2 rounded-lg border border-gray-100 bg-gray-50 hover:bg-white hover:shadow-sm transition cursor-default group"><div class="w-8 h-8 rounded-full ${b.bg} flex items-center justify-center shrink-0"><i class="fa-solid ${b.icon} ${b.color}"></i></div><div><p class="text-xs font-bold text-gray-800">${b.name}</p><p class="text-[10px] text-gray-400 group-hover:text-gray-500">${b.desc}</p></div></div>`;
+                    html += `<div class="flex items-center space-x-2 px-3 py-2 rounded-lg border border-gray-100 bg-gray-50 hover:bg-white hover:shadow-sm transition cursor-default group">
+                        <div class="w-8 h-8 rounded-full ${b.bg} flex items-center justify-center shrink-0">
+                            <i class="fa-solid ${b.icon} ${b.color}"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-gray-800">${b.name}</p>
+                            <p class="text-[10px] text-gray-400 group-hover:text-gray-500">${b.desc}</p>
+                        </div>
+                    </div>`;
                 });
                 container.innerHTML = html;
-            } else { container.innerHTML = '<p class="text-xs text-gray-400">暂无特殊成就，继续观看以解锁！</p>'; }
-        } catch(e) {}
+            } else { 
+                container.innerHTML = '<p class="text-xs text-gray-400 py-4">暂无特殊成就，继续观看以解锁！</p>'; 
+            }
+        } catch(e) { console.error("Badges Error:", e); }
     }
 
     function renderHourlyChart(dataObj) {
         const ctx = document.getElementById('hourlyChart').getContext('2d');
         if(charts.hourly) charts.hourly.destroy();
+        
+        const labels = Object.keys(dataObj);
+        const values = Object.values(dataObj);
+        
         charts.hourly = new Chart(ctx, {
             type: 'bar',
-            data: { labels: Object.keys(dataObj), datasets: [{ label: '播放', data: Object.values(dataObj), backgroundColor: 'rgba(59, 130, 246, 0.6)', borderRadius: 4 }] },
-            options: { responsive: true, maintainAspectRatio: false, scales: { x: {grid:{display:false}}, y: {beginAtZero:true, border:{display:false}} }, plugins: {legend:{display:false}} }
+            data: { 
+                labels: labels, 
+                datasets: [{ 
+                    label: '播放', 
+                    data: values, 
+                    backgroundColor: 'rgba(59, 130, 246, 0.6)', 
+                    borderRadius: 4 
+                }] 
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                scales: { 
+                    x: {grid:{display:false}}, 
+                    y: {beginAtZero:true, border:{display:false}} 
+                }, 
+                plugins: {legend:{display:false}} 
+            }
         });
     }
 
     function renderDeviceChart(dataList) {
         const ctx = document.getElementById('deviceChart').getContext('2d');
+        if(charts.device) charts.device.destroy();
+        
+        if(!dataList || dataList.length === 0) {
+             return;
+        }
+
         let labels = [], values = [], others = 0;
         dataList.forEach((d, i) => { if(i < 5) { labels.push(d.Device); values.push(d.Plays); } else { others += d.Plays; } });
         if(others > 0) { labels.push('其他'); values.push(others); }
-        if(charts.device) charts.device.destroy();
+        
         charts.device = new Chart(ctx, {
             type: 'doughnut',
             data: { labels: labels, datasets: [{ data: values, backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#cbd5e1'], borderWidth: 0 }] },
@@ -221,35 +256,33 @@
     function renderLogs(logs) {
         const tbody = document.getElementById('logs-table-body');
         if (!logs || logs.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-400">暂无播放记录</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-gray-400">暂无播放记录</td></tr>';
             return;
         }
-        
+
         let html = '';
         logs.forEach(log => {
-            // 🔥 修复：去掉 + 'Z'，防止二次叠加时区导致显示未来时间
-            // 直接将字符串中的空格替换为T，作为本地时间解析
+            // 🔥 修复时间解析：处理 "YYYY-MM-DD HH:MM:SS" 为 ISO 格式
             let dateStr = log.DateCreated;
-            // 兼容部分浏览器解析问题，确保 "YYYY-MM-DD HH:MM:SS" 能被识别
             if (dateStr && dateStr.includes(' ')) {
                 dateStr = dateStr.replace(' ', 'T');
             }
-            const dateObj = new Date(dateStr); 
+            const dateObj = new Date(dateStr);
             const date = dateObj.toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'});
             
-            // 简单的设备图标映射
+            // 智能设备图标映射
             let deviceIcon = 'fa-mobile-screen';
             const d = (log.Device || '').toLowerCase();
             if(d.includes('browser') || d.includes('chrome')) deviceIcon = 'fa-globe';
             else if(d.includes('tv')) deviceIcon = 'fa-tv';
             else if(d.includes('apple')) deviceIcon = 'fa-apple';
             
-            html += `<tr class="bg-white border-b hover:bg-gray-50">
+            html += `<tr class="bg-white border-b hover:bg-gray-50 transition">
                 <td class="px-6 py-3 font-medium text-gray-900 whitespace-nowrap">${date}</td>
                 <td class="px-6 py-3">${log.UserName}</td>
                 <td class="px-6 py-3 font-bold text-gray-800 line-clamp-1 max-w-xs" title="${log.ItemName}">${log.ItemName}</td>
-                <td class="px-6 py-3 text-xs text-gray-500">
-                    <span class="bg-gray-100 px-2 py-1 rounded border border-gray-200 flex items-center w-fit gap-1">
+                <td class="px-6 py-3 text-xs">
+                    <span class="bg-gray-100 text-gray-600 px-2 py-1 rounded-md border border-gray-200 flex items-center w-fit gap-1.5">
                         <i class="fa-solid ${deviceIcon} text-[10px]"></i> ${log.Device}
                     </span>
                 </td>

@@ -4,6 +4,7 @@ import uvicorn
 import requests
 import datetime
 import json
+import time
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,7 +19,7 @@ EMBY_HOST = os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/')
 EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip()
 FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
-print(f"--- EmbyPulse V28 (Avatar Ratio Fix) ---")
+print(f"--- EmbyPulse V28 (Avatar & Badge Optimization) ---")
 print(f"DB Path: {DB_PATH}")
 
 app = FastAPI()
@@ -40,7 +41,8 @@ templates = Jinja2Templates(directory="templates")
 def query_db(query, args=(), one=False):
     if not os.path.exists(DB_PATH): return None
     try:
-        conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+        # 增加 timeout 防止高并发下的死锁
+        conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=10.0)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute(query, args)
@@ -314,12 +316,12 @@ def proxy_image(item_id: str, img_type: str):
     except: pass
     return RedirectResponse(FALLBACK_IMAGE_URL)
 
-# 🔥 核心修正: 强制请求正方形裁切图，防止前端拉伸
+# 🔥 修正: 向 Emby 请求服务端裁切的正方形图，彻底解决头像拉伸
 @app.get("/api/proxy/user_image/{user_id}")
 def proxy_user_image(user_id: str):
     if not EMBY_API_KEY: return Response(status_code=404)
     try:
-        # 变化点: 增加了 width=200&height=200&mode=Crop
+        # 核心改动: width=200&height=200&mode=Crop 确保返回正方形图
         url = f"{EMBY_HOST}/emby/Users/{user_id}/Images/Primary?width=200&height=200&mode=Crop"
         resp = requests.get(url, timeout=3)
         if resp.status_code == 200:
@@ -328,10 +330,7 @@ def proxy_user_image(user_id: str):
     except: pass
     return Response(status_code=404)
 
-# ==========================================
-# 替换 main.py 中的 api_badges 函数
-# ==========================================
-
+# 🔥 丰富后的成就系统逻辑
 @app.get("/api/stats/badges")
 def api_badges(user_id: Optional[str] = None):
     try:
@@ -356,7 +355,7 @@ def api_badges(user_id: Optional[str] = None):
         if total_dur > 360000:
              badges.append({"id": "liver", "name": "Emby肝帝", "icon": "fa-fire", "color": "text-red-500", "bg": "bg-red-100", "desc": "阅片无数，心中的码比片还厚"})
 
-        # 4. 偏好分析: 电影迷 vs 追剧狂
+        # 4. 偏好分析: 电影迷 vs 追剧狂魔
         type_res = query_db(f"SELECT ItemType, COUNT(*) as c FROM PlaybackActivity {where} GROUP BY ItemType", params)
         type_counts = {row['ItemType']: row['c'] for row in type_res or []}
         movies = type_counts.get('Movie', 0)
@@ -367,7 +366,7 @@ def api_badges(user_id: Optional[str] = None):
         elif episodes > 50 and episodes > movies:
              badges.append({"id": "series", "name": "追剧狂魔", "icon": "fa-tv", "color": "text-green-500", "bg": "bg-green-100", "desc": "下一集...再看一集就睡"})
 
-        # 5. 早起鸟: 早上 6-9 点播放
+        # 5. 早起鸟: 早上 6-9 点播放超过 5 次
         morning_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND strftime('%H', DateCreated) BETWEEN '06' AND '09'", params)
         if morning_res and morning_res[0]['c'] > 5:
             badges.append({"id": "morning", "name": "早起鸟", "icon": "fa-sun", "color": "text-orange-500", "bg": "bg-orange-100", "desc": "一日之计在于晨"})
