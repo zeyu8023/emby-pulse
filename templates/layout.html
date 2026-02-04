@@ -4,97 +4,59 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}EmbyPulse{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
-        * { box-sizing: border-box; }
-        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f3f4f6; }
-        
-        .sidebar {
-            width: 250px; background: white; height: 100vh; position: fixed; left: 0; top: 0;
-            border-right: 1px solid #e5e7eb; display: flex; flex-direction: column;
-            z-index: 100;
-        }
-        
-        .brand {
-            padding: 25px; display: flex; align-items: center; gap: 12px;
-            border-bottom: 1px solid #f3f4f6;
-        }
-        .logo-icon {
-            width: 32px; height: 32px; background: linear-gradient(135deg, #10b981, #3b82f6);
-            border-radius: 8px; display: flex; align-items: center; justify-content: center;
-            color: white; font-weight: bold; font-size: 18px;
-        }
-        .brand-text { font-size: 18px; font-weight: 800; color: #1f2937; }
-        .user-role { font-size: 10px; background: #e5e7eb; padding: 2px 6px; border-radius: 4px; color: #666; margin-left: auto; }
-
-        .nav { flex: 1; padding: 20px 15px; overflow-y: auto; }
-        
-        .nav-item {
-            display: flex; align-items: center; gap: 12px; padding: 12px 15px;
-            color: #4b5563; text-decoration: none; border-radius: 10px;
-            margin-bottom: 5px; transition: all 0.2s; font-weight: 500; font-size: 14px;
-        }
-        .nav-item:hover { background: #f9fafb; color: #10b981; }
-        .nav-item.active { background: #ecfdf5; color: #059669; font-weight: 600; }
-        .nav-item i { width: 20px; text-align: center; }
-
-        /* 底部操作区 */
-        .sidebar-footer { padding: 15px; border-top: 1px solid #f3f4f6; }
-        
-        .btn-logout {
-            width: 100%; padding: 10px; border: 1px solid #fee2e2;
-            background: #fef2f2; color: #ef4444; border-radius: 8px;
-            cursor: pointer; font-size: 14px; font-weight: 600;
-            display: flex; align-items: center; justify-content: center; gap: 8px;
-            transition: all 0.2s;
-        }
-        .btn-logout:hover { background: #fee2e2; }
-
-        .main-content { margin-left: 250px; padding: 0; min-height: 100vh; }
-
-        @media (max-width: 768px) {
-            .sidebar { display: none; }
-            .main-content { margin-left: 0; }
-        }
+        /* 字体优化 */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        /* 滚动条美化 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 3px; }
+        ::-webkit-scrollbar-track { background: transparent; }
     </style>
     {% block head %}{% endblock %}
 </head>
-<body>
-    <aside class="sidebar">
-        <div class="brand">
-            <div class="logo-icon">P</div>
-            <div class="brand-text">EmbyPulse</div>
-            <span class="user-role">{% if user and user.is_admin %}ADMIN{% else %}USER{% endif %}</span>
+<body class="bg-gray-100 text-gray-800">
+
+    <aside class="hidden md:flex flex-col w-64 h-screen fixed left-0 top-0 bg-white border-r border-gray-200 z-50">
+        <div class="p-6 border-b border-gray-100 flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-blue-500 flex items-center justify-center text-white font-bold text-lg shadow-md">P</div>
+            <div class="font-extrabold text-xl tracking-tight text-gray-800">EmbyPulse</div>
+            <span class="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded ml-auto font-mono">
+                {% if user and user.is_admin %}ADMIN{% else %}USER{% endif %}
+            </span>
         </div>
-        
-        <nav class="nav">
-            <div style="padding-left: 15px; margin-bottom: 10px; font-size: 11px; color: #9ca3af; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">
+
+        <nav class="flex-1 overflow-y-auto p-4 space-y-1">
+            <div class="px-3 mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
                 {% if user and user.is_admin %}Console{% else %}My Space{% endif %}
             </div>
             
-            <a href="/" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
-                <i class="fa-solid fa-chart-line"></i> 仪表盘
+            <a href="/" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm {% if active_page == 'dashboard' %}bg-emerald-50 text-emerald-600 font-bold{% else %}text-gray-600 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+                <i class="fa-solid fa-chart-line w-5 text-center"></i> 仪表盘
             </a>
-            <a href="/content" class="nav-item {% if active_page == 'content' %}active{% endif %}">
-                <i class="fa-solid fa-trophy"></i> 内容排行
+            <a href="/content" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm {% if active_page == 'content' %}bg-emerald-50 text-emerald-600 font-bold{% else %}text-gray-600 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+                <i class="fa-solid fa-trophy w-5 text-center"></i> 内容排行
             </a>
-            <a href="/details" class="nav-item {% if active_page == 'details' %}active{% endif %}">
-                <i class="fa-solid fa-magnifying-glass-chart"></i> 数据洞察
+            <a href="/details" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm {% if active_page == 'details' %}bg-emerald-50 text-emerald-600 font-bold{% else %}text-gray-600 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+                <i class="fa-solid fa-magnifying-glass-chart w-5 text-center"></i> 数据洞察
             </a>
-            <div style="margin: 20px 0 10px; padding-left: 15px; font-size: 11px; color: #9ca3af; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Tools</div>
-            <a href="/report" class="nav-item {% if active_page == 'report' %}active{% endif %}">
-                <i class="fa-solid fa-wand-magic-sparkles"></i> 映迹工坊
+
+            <div class="px-3 mt-6 mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider">Tools</div>
+            
+            <a href="/report" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm {% if active_page == 'report' %}bg-emerald-50 text-emerald-600 font-bold{% else %}text-gray-600 hover:bg-gray-50 hover:text-gray-900{% endif %}">
+                <i class="fa-solid fa-wand-magic-sparkles w-5 text-center"></i> 映迹工坊
             </a>
         </nav>
 
-        <div class="sidebar-footer">
-            <button class="btn-logout" onclick="logout()">
+        <div class="p-4 border-t border-gray-100">
+            <button onclick="logout()" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg text-sm font-bold transition-colors">
                 <i class="fa-solid fa-right-from-bracket"></i> 退出登录
             </button>
         </div>
     </aside>
 
-    <main class="main-content">
+    <main class="md:ml-64 min-h-screen">
         {% block content %}{% endblock %}
     </main>
 
@@ -102,8 +64,10 @@
     <script>
         async function logout() {
             if(confirm('确定要退出登录吗？')) {
-                await fetch('/api/auth/logout', { method: 'POST' });
-                window.location.href = '/login';
+                try {
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                    window.location.href = '/login';
+                } catch(e) { alert('注销失败'); }
             }
         }
     </script>

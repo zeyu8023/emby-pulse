@@ -3,28 +3,27 @@
 {% block head %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <script src="https://cdn.bootcdn.net/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-    /* ================= 全局设定 ================= */
-    html, body { height: 100%; margin: 0; background: #f3f4f6; font-family: "Microsoft YaHei", -apple-system, sans-serif !important; overflow: hidden; }
-    .app-container { display: flex; height: 100%; }
+    /* 此处保留 V33/V37 的自定义样式，不受 Tailwind 干扰 */
+    /* .app-container 等样式保持不变 */
+    .app-container { display: flex; height: 100vh; overflow: hidden; } /* Tailwind可能会改body高度，这里强制 */
     
-    /* ================= 预览区 ================= */
+    /* 预览区 */
     .preview-area {
         flex: 1; overflow-y: auto; display: flex; justify-content: center; align-items: flex-start;
-        padding: 40px 20px; 
-        padding-top: 30px; 
+        padding: 40px 20px; padding-top: 30px; 
         background-color: #e5e7eb; -webkit-overflow-scrolling: touch;
         padding-bottom: 140px; 
     }
 
-    /* ================= PC端控制台 ================= */
+    /* PC端控制台 (配合 Layout 使用，这里只需定义内容) */
     .control-panel {
         width: 360px; background: white; padding: 20px; border-left: 1px solid #ddd;
         z-index: 50; display: block; box-shadow: -5px 0 15px rgba(0,0,0,0.05); overflow-y: auto;
+        height: 100vh;
     }
 
-    /* ================= 移动端交互 ================= */
+    /* 移动端工具栏 */
     .mobile-toolbar {
         display: none; position: fixed; bottom: 0; left: 0; width: 100%; height: 70px;
         background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px);
@@ -36,6 +35,7 @@
     .btn-config { background: #f3f4f6; color: #333; margin-right: 10px; border: 1px solid #ddd; }
     .btn-save { background: #16a34a; color: white; flex: 1.5; box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3); }
 
+    /* 抽屉 */
     .bottom-sheet {
         display: block; visibility: hidden; position: fixed; bottom: 0; left: 0; width: 100%;
         background: white; border-radius: 20px 20px 0 0; padding: 25px; padding-bottom: 40px;
@@ -44,26 +44,24 @@
         max-height: 85vh; overflow-y: auto;
     }
     .bottom-sheet.active { visibility: visible; transform: translateY(0); }
-
     .sheet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .sheet-title { font-weight: 900; font-size: 18px; color: #333; }
     .sheet-close { width: 30px; height: 30px; border-radius: 50%; background: #f3f4f6; display: flex; align-items: center; justify-content: center; color: #666; cursor: pointer; }
-
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 550; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
     .overlay.active { opacity: 1; pointer-events: auto; }
 
     @media (max-width: 768px) {
-        .app-container { flex-direction: column; }
+        .app-container { flex-direction: column; height: auto; }
         .control-panel { display: none !important; } 
         .mobile-toolbar { display: flex; } 
-        .preview-area { align-items: flex-start; } 
     }
 
-    /* ================= 海报样式 ================= */
+    /* === 海报核心样式 === */
     :root { --theme-bg: #1a1a1a; --theme-card: rgba(255,255,255,0.08); --theme-text: white; --theme-highlight: #eab308; }
     
     .poster-canvas {
         width: 400px; 
+        /* V38: 高度自适应，但关键在 JS 截图时截取 */
         height: fit-content; 
         min-height: auto;
         padding-bottom: 20px; 
@@ -126,12 +124,10 @@
     .rank-name { font-size: 12px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 4px; margin-bottom: -2px; }
     .rank-meta-row { font-size: 9px; opacity: 0.7; display: flex; gap: 8px; }
     
-    .p-footer { 
-        margin-top: 15px; 
-        text-align: center; opacity: 0.4; font-size: 10px; letter-spacing: 2px; 
-    }
+    .p-footer { margin-top: 15px; text-align: center; opacity: 0.4; font-size: 10px; letter-spacing: 2px; }
     .empty-box { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.4; min-height: 200px; text-align: center; }
 
+    /* 控制面板样式 */
     .ctrl-label { font-size: 12px; font-weight: bold; color: #666; margin-bottom: 8px; display: block; }
     .btn-group { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
     .btn { flex: 1; padding: 10px; border: 1px solid #ddd; background: #fff; font-weight: bold; border-radius: 8px; font-size: 12px; cursor: pointer; min-width: 60px; white-space: nowrap; }
@@ -397,33 +393,28 @@
     }
 
     async function init() {
-        // 🔥 V34: 认证逻辑
         const meRes = await fetch('/api/auth/me');
         if (!meRes.ok) { window.location.href = '/login'; return; }
         const meJson = await meRes.json();
         const me = meJson.data;
 
-        // 获取用户列表
         const res = await fetch('/api/users');
         const json = await res.json();
         const selects = document.querySelectorAll('#user-select');
         const containers = document.querySelectorAll('#user-select-container');
 
-        // 🔥 V34: 普通用户隐藏下拉框
         if (!me.is_admin) {
             containers.forEach(el => el.style.display = 'none');
         }
 
         selects.forEach(sel => {
             sel.innerHTML = '';
-            // 🔥 V33: 管理员显示全服选项
             if (me.is_admin) {
                 const optAll = document.createElement('option');
                 optAll.value = 'all';
                 optAll.innerText = '全服概览 (All Users)';
                 sel.appendChild(optAll);
             }
-
             if(json.data) {
                 json.data.forEach(u => {
                     const opt = document.createElement('option');
@@ -433,29 +424,19 @@
             }
         });
         
-        if (me.is_admin) {
-            changeUser('all');
-        } else {
-            changeUser(me.id);
-        }
+        if (me.is_admin) { changeUser('all'); } else { changeUser(me.id); }
     }
 
     function changeUser(uid) {
         currentUserId = uid;
         document.querySelectorAll('#user-select').forEach(s => s.value = uid);
-        
         const sel = document.querySelector('#user-select');
         let found = false;
         for(let opt of sel.options) {
-            if(opt.value === uid) {
-                currentUserName = opt.text;
-                found = true;
-                break;
-            }
+            if(opt.value === uid) { currentUserName = opt.text; found = true; break; }
         }
         if(!found) currentUserName = 'User';
         if(uid === 'all') currentUserName = 'Emby Server';
-
         document.getElementById('p-user').innerText = currentUserName;
         loadAvatar();
         loadData();
@@ -566,8 +547,16 @@
             });
             await Promise.all(promises);
 
-            const canvas = await html2canvas(document.getElementById('capture-target'), { 
-                scale: 2, useCORS: true, backgroundColor: null 
+            // 🔥 V38 修复：计算实际内容高度，物理裁剪空白
+            const canvasEl = document.getElementById('capture-target');
+            const contentHeight = canvasEl.scrollHeight; // 获取真实渲染高度
+
+            const canvas = await html2canvas(canvasEl, { 
+                scale: 2, 
+                useCORS: true, 
+                backgroundColor: null,
+                height: contentHeight, // 强制设置截图高度
+                windowHeight: contentHeight
             });
             const link = document.createElement('a');
             link.download = `EmbyReport_${currentUserId}.png`;

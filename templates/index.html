@@ -5,11 +5,6 @@
     /* 强制统一全局字体 */
     body, .sidebar { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }
 
-    /* 🔥 核心魔法：只显示前 20 个 */
-    .recent-card:nth-of-type(n+21) {
-        display: none !important;
-    }
-    
     /* 玻璃卡片样式优化 */
     .glass-card { 
         background: white; 
@@ -18,6 +13,8 @@
         padding: 20px; 
         box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); 
     }
+    
+    /* 移除了之前的 CSS 隐藏法，改用 JS 控制更健康 */
 </style>
 {% endblock %}
 {% block content %}
@@ -70,7 +67,7 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-            <h3 class="text-base font-bold text-gray-800 mb-4 flex items-center"><i class="fa-solid fa-chart-area text-blue-500 mr-2"></i> 播放趋势</h3>
+            <h3 class="text-base font-bold text-gray-800 mb-4 flex items-center"><i class="fa-solid fa-chart-area text-blue-500 mr-2"></i> 播放趋势 (近7天)</h3>
             <div class="relative h-64 w-full"><canvas id="trendChart"></canvas></div>
         </div>
         <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col">
@@ -83,17 +80,141 @@
 
 {% block scripts %}
 <script>
+    // 全局图表实例
+    let chartInstance = null;
+
     document.getElementById('current-date').innerText = new Date().toLocaleDateString(undefined, {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
 
     async function init() {
         await loadUsers();
-        fetchDashboardData('all');
-        fetchRecentActivity('all');
+        // 初始加载全服数据
+        changeUser(); 
         fetchTopUsers();
-        initChart();
-        fetchLive(); setInterval(fetchLive, 10000);
+        fetchLive(); 
+        setInterval(fetchLive, 10000);
     }
 
+    // 核心切换逻辑：当切换用户时，重新加载所有模块
+    function changeUser() {
+        const userId = document.getElementById('dash-user-select').value;
+        fetchDashboardData(userId);
+        fetchRecentActivity(userId);
+        fetchTrendData(userId); // 新增：加载真实图表数据
+    }
+
+    // 1. 获取基础统计
+    async function fetchDashboardData(userId) {
+        try {
+            const response = await fetch(`/api/stats/dashboard?user_id=${userId}`);
+            const res = await response.json();
+            if(res.status === 'success') {
+                const data = res.data;
+                document.getElementById('stat-plays').innerText = data.total_plays || 0;
+                document.getElementById('stat-users').innerText = data.active_users || 0;
+                document.getElementById('stat-duration').innerText = Math.round((data.total_duration || 0) / 3600);
+            }
+        } catch (error) { console.error("Stats Error:", error); }
+    }
+    
+    // 2. 获取并渲染最近播放 (前端截取前20条)
+    async function fetchRecentActivity(userId) {
+        const container = document.getElementById('recent-container');
+        try {
+            const res = await fetch(`/api/stats/recent?user_id=${userId}`);
+            const json = await res.json();
+            
+            if (json.status === 'success' && json.data.length > 0) {
+                let html = '';
+                // 优化：只取前20条数据渲染，不再依赖 CSS 隐藏，提升性能
+                const limitData = json.data.slice(0, 20); 
+                
+                limitData.forEach(item => {
+                    const displayTitle = item.DisplayName || item.ItemName;
+                    const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
+                    // 注意：如果你的数据库时间是 UTC，这里需要保留 'Z'；如果是本地时间，请去掉 'Z'
+                    const date = new Date(item.DateCreated + 'Z').toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'});
+                    
+                    html += `
+                    <div class="recent-card group relative bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg transition">
+                        <div class="aspect-[2/3] overflow-hidden bg-gray-100 relative">
+                            <img src="${imgUrl}" class="w-full h-full object-cover transition duration-700 group-hover:scale-110" loading="lazy" onerror="this.closest('.recent-card').remove()">
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60"></div>
+                            <div class="absolute bottom-1.5 left-1.5 right-1.5">
+                                <p class="text-[9px] text-gray-300"><i class="fa-regular fa-clock mr-1"></i>${date}</p>
+                                <p class="text-white text-[10px] font-bold truncate mt-0.5">${item.UserName}</p>
+                            </div>
+                        </div>
+                        <div class="p-2"><h4 class="text-[10px] font-bold text-gray-800 line-clamp-1" title="${displayTitle}">${displayTitle}</h4></div>
+                    </div>`;
+                });
+                container.innerHTML = html;
+            } else { 
+                container.innerHTML = `<div class="col-span-full py-8 text-center text-sm text-gray-400">暂无最近播放记录</div>`; 
+            }
+        } catch (e) { console.error("Recent Error:", e); }
+    }
+
+    // 3. 获取并渲染图表数据 (新功能)
+    async function fetchTrendData(userId) {
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        
+        // 如果旧图表存在，先销毁，防止数据重叠
+        if (chartInstance) {
+            chartInstance.destroy();
+        }
+
+        // 默认空数据 (骨架屏占位)
+        let chartLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+        let chartValues = [0, 0, 0, 0, 0, 0, 0];
+
+        try {
+            // 🔥 请确保后端有这个接口 /api/stats/trend
+            // 预期返回格式: { status: "success", data: { labels: ["10-01", ...], values: [15, 23, ...] } }
+            const res = await fetch(`/api/stats/trend?user_id=${userId}`);
+            const json = await res.json();
+            
+            if (json.status === 'success' && json.data) {
+                chartLabels = json.data.labels;
+                chartValues = json.data.values;
+            }
+        } catch (e) {
+            console.log("Trend API fetch failed, using empty data for now.");
+        }
+
+        // 渲染图表
+        let gradient = ctx.createLinearGradient(0, 0, 0, 400);
+        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
+        gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+
+        chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: chartLabels,
+                datasets: [{ 
+                    label: '播放热度', 
+                    data: chartValues, 
+                    borderColor: '#3b82f6', 
+                    backgroundColor: gradient, 
+                    borderWidth: 2, 
+                    pointBackgroundColor: '#fff', 
+                    pointBorderColor: '#3b82f6', 
+                    fill: true, 
+                    tension: 0.4 
+                }]
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { legend: { display: false } }, 
+                scales: { 
+                    y: { beginAtZero: true, grid: { borderDash: [4, 4], color: '#f3f4f6' }, ticks: { font: {size: 10} } }, 
+                    x: { grid: { display: false }, ticks: { font: {size: 10} } } 
+                } 
+            }
+        });
+    }
+
+    // 4. 其他辅助函数
     async function fetchLive() {
         try {
             const res = await fetch('/api/live');
@@ -128,58 +249,7 @@
             }
         } catch (e) { console.error(e); }
     }
-    
-    function changeUser() {
-        const userId = document.getElementById('dash-user-select').value;
-        fetchDashboardData(userId);
-        fetchRecentActivity(userId);
-    }
-    
-    async function fetchDashboardData(userId) {
-        try {
-            const response = await fetch(`/api/stats/dashboard?user_id=${userId}`);
-            const res = await response.json();
-            if(res.status === 'success') {
-                const data = res.data;
-                document.getElementById('stat-plays').innerText = data.total_plays || 0;
-                document.getElementById('stat-users').innerText = data.active_users || 0;
-                document.getElementById('stat-duration').innerText = Math.round((data.total_duration || 0) / 3600);
-            }
-        } catch (error) { console.error(error); }
-    }
-    
-    async function fetchRecentActivity(userId) {
-        const container = document.getElementById('recent-container');
-        try {
-            const res = await fetch(`/api/stats/recent?user_id=${userId}`);
-            const json = await res.json();
-            if (json.status === 'success' && json.data.length > 0) {
-                let html = '';
-                json.data.forEach(item => {
-                    // 🔥 使用聚合后的 DisplayName (如果后端支持)，否则回退 ItemName
-                    const displayTitle = item.DisplayName || item.ItemName;
-                    
-                    const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
-                    const date = new Date(item.DateCreated + 'Z').toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'});
-                    
-                    html += `
-                    <div class="recent-card group relative bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg transition">
-                        <div class="aspect-[2/3] overflow-hidden bg-gray-100 relative">
-                            <img src="${imgUrl}" class="w-full h-full object-cover transition duration-700 group-hover:scale-110" loading="lazy" onerror="this.closest('.recent-card').remove()">
-                            <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60"></div>
-                            <div class="absolute bottom-1.5 left-1.5 right-1.5">
-                                <p class="text-[9px] text-gray-300"><i class="fa-regular fa-clock mr-1"></i>${date}</p>
-                                <p class="text-white text-[10px] font-bold truncate mt-0.5">${item.UserName}</p>
-                            </div>
-                        </div>
-                        <div class="p-2"><h4 class="text-[10px] font-bold text-gray-800 line-clamp-1" title="${displayTitle}">${displayTitle}</h4></div>
-                    </div>`;
-                });
-                container.innerHTML = html;
-            } else { container.innerHTML = `<div class="col-span-full py-8 text-center text-sm text-gray-400">暂无最近播放记录</div>`; }
-        } catch (e) { console.error(e); }
-    }
-    
+
     async function fetchTopUsers() {
         const container = document.getElementById('top-users-container');
         try {
@@ -205,21 +275,7 @@
             }
         } catch (e) { console.error(e); }
     }
-    
-    function initChart() {
-        const ctx = document.getElementById('trendChart').getContext('2d');
-        let gradient = ctx.createLinearGradient(0, 0, 0, 400);
-        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
-        gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
-                datasets: [{ label: '热度趋势', data: [12, 25, 10, 5, 8, 35, 50], borderColor: '#3b82f6', backgroundColor: gradient, borderWidth: 2, pointBackgroundColor: '#fff', pointBorderColor: '#3b82f6', fill: true, tension: 0.4 }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { borderDash: [4, 4], color: '#f3f4f6' }, ticks: { font: {size: 10} } }, x: { grid: { display: false }, ticks: { font: {size: 10} } } } }
-        });
-    }
+
     init();
 </script>
 {% endblock %}
