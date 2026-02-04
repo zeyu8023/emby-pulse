@@ -22,7 +22,7 @@ EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip()
 # 默认图片 (当 Emby 图片加载失败时的兜底图)
 FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
-print(f"--- EmbyPulse Ultimate V7 Starting ---")
+print(f"--- EmbyPulse Ultimate V8 Starting ---")
 print(f"DB Path: {DB_PATH}")
 print(f"API Key: {'✅ Loaded' if EMBY_API_KEY else '❌ Not Set (Images/Live disabled)'}")
 
@@ -219,7 +219,7 @@ async def api_live_sessions():
         return {"status": "success", "data": sessions}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-# === 🔥 映迹工坊核心数据接口 (V7 - 智能聚合版) ===
+# === 🔥 映迹工坊核心数据接口 (V8 - 智能聚合 + 全服数据 + Top10) ===
 @app.get("/api/stats/poster_data")
 async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
     """
@@ -301,10 +301,6 @@ async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
         elif total_hours > 100: tags.append("忠实观众")
         
         # 简单的时间段统计 (为了性能不再查库，如果需要精确可另加逻辑)
-        # 这里简化处理
-        if total_plays > 0:
-             pass # 可扩展深夜党逻辑
-
         if not tags: tags.append("佛系观众")
 
         return {
@@ -325,10 +321,8 @@ async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
 async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month'):
     try:
         where, params = "WHERE 1=1", []
-        if user_id and user_id != 'all':
-            where += " AND UserId = ?"
-            params.append(user_id)
-            
+        if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
+        
         sql = ""
         if dimension == 'year':
             sql = f"SELECT strftime('%Y', DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Label ORDER BY Label DESC LIMIT 5"
@@ -352,9 +346,7 @@ async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month
 async def api_user_details(user_id: Optional[str] = None):
     try:
         where, params = "WHERE 1=1", []
-        if user_id and user_id != 'all':
-            where += " AND UserId = ?"
-            params.append(user_id)
+        if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
         
         hourly_res = query_db(f"SELECT strftime('%H', DateCreated) as Hour, COUNT(*) as Plays FROM PlaybackActivity {where} GROUP BY Hour ORDER BY Hour", params)
         hourly_data = {str(i).zfill(2): 0 for i in range(24)}
@@ -445,7 +437,6 @@ async def proxy_image(item_id: str, img_type: str):
                 data = info_resp.json()
                 if data.get("Items"):
                     item = data["Items"][0]
-                    # 如果是单集，尝试用剧集 ID
                     if item.get('Type') == 'Episode':
                         if item.get('SeriesId'): target_id = item.get('SeriesId')
                         elif item.get('ParentId'): target_id = item.get('ParentId')
