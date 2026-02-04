@@ -3,12 +3,13 @@
 {% block head %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <script src="https://cdn.bootcdn.net/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
     /* ================= 全局设定 ================= */
     html, body { height: 100%; margin: 0; background: #f3f4f6; font-family: "Microsoft YaHei", -apple-system, sans-serif !important; overflow: hidden; }
     .app-container { display: flex; height: 100%; }
     
-    /* ================= 预览区 ================= */
+    /* ================= 预览区 (Preview Area) ================= */
     .preview-area {
         flex: 1; overflow-y: auto; display: flex; justify-content: center; align-items: flex-start;
         padding: 40px 20px; 
@@ -82,6 +83,7 @@
     .p-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
     .user-box { display: flex; align-items: center; gap: 12px; }
     
+    /* 🔥 V32: 头像样式 - 矢量图标适配 */
     .avatar { 
         width: 54px; height: 54px; border-radius: 50%; 
         background-color: #e5e7eb; 
@@ -217,10 +219,16 @@
             <div class="sheet-close" onclick="toggleSheet(false)"><i class="fa-solid fa-xmark"></i></div>
         </div>
         <div id="mobile-controls-container">
-            <label class="ctrl-label">选择用户</label>
-            <select id="user-select" onchange="changeUser(this.value)" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 15px; background: #f9fafb;">
-                <option>Loading...</option>
-            </select>
+            <button class="btn" onclick="logout()" style="background: #ef4444; border-color:#ef4444; color: white; margin-bottom: 20px;">
+                <i class="fa-solid fa-right-from-bracket"></i> 退出登录
+            </button>
+
+            <div id="user-select-container">
+                <label class="ctrl-label">选择用户</label>
+                <select id="user-select" onchange="changeUser(this.value)" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 15px; background: #f9fafb;">
+                    <option>Loading...</option>
+                </select>
+            </div>
 
             <label class="ctrl-label">时间范围</label>
             <div class="btn-group">
@@ -256,6 +264,13 @@
     let currentUserId = '';
     let currentUserName = 'User';
     let currentPeriod = 'month';
+
+    async function logout() {
+        if(confirm('确定要退出登录吗？')) {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/login';
+        }
+    }
 
     function checkLayout() {
         const isMobile = window.innerWidth <= 768;
@@ -360,7 +375,7 @@
         avatarEl.style.backgroundImage = 'none';
         avatarEl.innerText = '';
         
-        // 🔥 V33: 全服用户特殊处理
+        // 🔥 V33: 全服用户专属头像
         if (currentUserId === 'all') {
             avatarEl.style.background = 'linear-gradient(135deg, #1a1a1a, #333)';
             avatarEl.innerHTML = '<i class="fa-solid fa-server"></i>';
@@ -386,17 +401,33 @@
     }
 
     async function init() {
+        // 🔥 V34: 认证检查
+        const meRes = await fetch('/api/auth/me');
+        if (!meRes.ok) { window.location.href = '/login'; return; }
+        const meJson = await meRes.json();
+        const me = meJson.data;
+
+        // 获取用户列表
         const res = await fetch('/api/users');
         const json = await res.json();
         const selects = document.querySelectorAll('#user-select');
+        const containers = document.querySelectorAll('#user-select-container');
+
+        // 🔥 V34: 普通用户隐藏下拉框
+        if (!me.is_admin) {
+            containers.forEach(el => el.style.display = 'none');
+        }
+
         selects.forEach(sel => {
             sel.innerHTML = '';
             
-            // 🔥 V33: 插入全服选项
-            const optAll = document.createElement('option');
-            optAll.value = 'all';
-            optAll.innerText = '全服概览 (All Users)';
-            sel.appendChild(optAll);
+            // 🔥 V33: 管理员显示全服选项
+            if (me.is_admin) {
+                const optAll = document.createElement('option');
+                optAll.value = 'all';
+                optAll.innerText = '全服概览 (All Users)';
+                sel.appendChild(optAll);
+            }
 
             if(json.data) {
                 json.data.forEach(u => {
@@ -407,8 +438,11 @@
             }
         });
         
-        // 默认选中全服
-        changeUser('all');
+        if (me.is_admin) {
+            changeUser('all');
+        } else {
+            changeUser(me.id);
+        }
     }
 
     function changeUser(uid) {
@@ -416,14 +450,15 @@
         document.querySelectorAll('#user-select').forEach(s => s.value = uid);
         
         const sel = document.querySelector('#user-select');
-        // V33: 正确获取文案（包含全服）
+        let found = false;
         for(let opt of sel.options) {
             if(opt.value === uid) {
                 currentUserName = opt.text;
+                found = true;
                 break;
             }
         }
-        // 如果是全服，简化显示名字
+        if(!found) currentUserName = 'User';
         if(uid === 'all') currentUserName = 'Emby Server';
 
         document.getElementById('p-user').innerText = currentUserName;
@@ -441,9 +476,9 @@
     }
 
     async function loadData() {
-        // V33: 允许 currentUserId 为 'all'
         if(!currentUserId) return;
         const res = await fetch(`/api/stats/poster_data?user_id=${currentUserId}&period=${currentPeriod}`);
+        if(res.status === 401) { window.location.href = '/login'; return; }
         const json = await res.json();
         const data = json.data;
 

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - EmbyPulse</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        body { height: 100vh; width: 100vw; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #111; }
+        
+        /* 动态背景 */
+        .bg-layer {
+            position: absolute; inset: 0; z-index: 0;
+            background-size: cover; background-position: center;
+            opacity: 0; transition: opacity 1s ease-in;
+        }
+        .bg-overlay {
+            position: absolute; inset: 0; z-index: 1;
+            background: rgba(0, 0, 0, 0.6); /* 黑色遮罩 */
+            backdrop-filter: blur(5px);
+        }
+
+        /* 登录卡片 */
+        .login-card {
+            position: relative; z-index: 10;
+            width: 90%; max-width: 400px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 40px 30px;
+            text-align: center;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+            transform: translateY(20px); opacity: 0;
+            animation: slideUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards 0.3s;
+        }
+
+        @keyframes slideUp { to { transform: translateY(0); opacity: 1; } }
+
+        .logo { 
+            width: 60px; height: 60px; margin-bottom: 15px; 
+            background: linear-gradient(135deg, #10b981, #3b82f6);
+            border-radius: 15px; display: inline-flex; align-items: center; justify-content: center;
+            font-size: 30px; color: white; font-weight: bold; box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+        }
+        
+        h1 { color: white; margin-bottom: 8px; font-size: 24px; font-weight: 700; }
+        p { color: rgba(255,255,255,0.6); font-size: 14px; margin-bottom: 30px; }
+
+        .input-group { margin-bottom: 20px; text-align: left; }
+        label { display: block; color: rgba(255,255,255,0.8); font-size: 12px; margin-bottom: 5px; font-weight: 600; }
+        input {
+            width: 100%; padding: 12px 15px; border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(0,0,0,0.3); color: white;
+            font-size: 16px; outline: none; transition: all 0.3s;
+        }
+        input:focus { border-color: #3b82f6; background: rgba(0,0,0,0.5); }
+
+        .btn {
+            width: 100%; padding: 14px; border-radius: 10px; border: none;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white; font-size: 16px; font-weight: bold; cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn:disabled { opacity: 0.7; cursor: not-allowed; }
+
+        #error-msg { color: #ef4444; font-size: 13px; margin-top: 15px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="bg-layer" id="bg"></div>
+    <div class="bg-overlay"></div>
+
+    <div class="login-card">
+        <div class="logo">P</div>
+        <h1>EmbyPulse</h1>
+        <p>登录你的 Emby 账号以继续</p>
+
+        <form id="login-form">
+            <div class="input-group">
+                <label>用户名</label>
+                <input type="text" name="username" required placeholder="Emby Username">
+            </div>
+            <div class="input-group">
+                <label>密码</label>
+                <input type="password" name="password" placeholder="Password">
+            </div>
+            <button type="submit" class="btn" id="login-btn">登 录</button>
+            <div id="error-msg"></div>
+        </form>
+    </div>
+
+    <script>
+        // 1. 加载 TMDB 背景
+        fetch('/api/tmdb/backdrop')
+            .then(r => r.json())
+            .then(data => {
+                const bg = document.getElementById('bg');
+                bg.style.backgroundImage = `url('${data.url}')`;
+                bg.style.opacity = '1';
+            });
+
+        // 2. 登录逻辑
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('login-btn');
+            const err = document.getElementById('error-msg');
+            const formData = new FormData(e.target);
+
+            btn.disabled = true;
+            btn.innerText = '验证中...';
+            err.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/auth/login', { method: 'POST', body: formData });
+                if (res.ok) {
+                    window.location.href = '/report'; // 登录成功跳转
+                } else {
+                    const json = await res.json();
+                    throw new Error(json.message || '登录失败');
+                }
+            } catch (error) {
+                err.innerText = error.message;
+                err.style.display = 'block';
+                btn.disabled = false;
+                btn.innerText = '登 录';
+                // 震动反馈
+                document.querySelector('.login-card').animate([
+                    { transform: 'translateX(0)' },
+                    { transform: 'translateX(-5px)' },
+                    { transform: 'translateX(5px)' },
+                    { transform: 'translateX(0)' }
+                ], { duration: 300 });
+            }
+        });
+    </script>
+</body>
+</html>

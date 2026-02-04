@@ -2,26 +2,32 @@ import sqlite3
 import os
 import uvicorn
 import requests
-import datetime
-import json
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import RedirectResponse
+import secrets
+import random
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, Form
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from typing import Optional
 
 # ================= 配置区域 =================
 PORT = 10307
 DB_PATH = os.getenv("DB_PATH", "/emby-data/playback_reporting.db")
 EMBY_HOST = os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/')
-EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip()
+EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip() 
+TMDB_API_KEY = os.getenv("TMDB_API_KEY", "") 
+SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
+
 FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
-print(f"--- EmbyPulse V27 (Final Fix) ---")
+print(f"--- EmbyPulse V35 (Full Features + Auth) ---")
 print(f"DB Path: {DB_PATH}")
 
 app = FastAPI()
+
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=86400*7)
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,20 +66,97 @@ def get_user_map():
         except: pass
     return user_map
 
-# ================= 页面路由 =================
-@app.get("/")
-async def page_dashboard(request: Request): return templates.TemplateResponse("index.html", {"request": request, "active_page": "dashboard"})
-@app.get("/content")
-async def page_content(request: Request): return templates.TemplateResponse("content.html", {"request": request, "active_page": "content"})
-@app.get("/report")
-async def page_report(request: Request): return templates.TemplateResponse("report.html", {"request": request, "active_page": "report"})
-@app.get("/details")
-async def page_details(request: Request): return templates.TemplateResponse("details.html", {"request": request, "active_page": "details"})
+# ================= 🔐 权限控制核心 =================
+def get_current_user(request: Request):
+    user = request.session.get("user")
+    if not user:
+        if request.url.path.startswith("/api/auth"): return None # 登录接口放行
+        if request.url.path.startswith("/api"):
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        return None
+    return user
 
-# ================= API: 基础用户 =================
-@app.get("/api/users")
-async def api_get_users():
+# ================= 页面路由 =================
+@app.get("/login")
+async def page_login(request: Request):
+    if request.session.get("user"): return RedirectResponse("/")
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.get("/")
+async def page_dashboard(request: Request): 
+    if not request.session.get("user"): return RedirectResponse("/login")
+    return templates.TemplateResponse("index.html", {"request": request, "active_page": "dashboard"})
+
+@app.get("/report")
+async def page_report(request: Request): 
+    if not request.session.get("user"): return RedirectResponse("/login")
+    return templates.TemplateResponse("report.html", {"request": request, "active_page": "report"})
+
+@app.get("/content")
+async def page_content(request: Request):
+    if not request.session.get("user"): return RedirectResponse("/login")
+    return templates.TemplateResponse("content.html", {"request": request, "active_page": "content"})
+
+@app.get("/details")
+async def page_details(request: Request):
+    if not request.session.get("user"): return RedirectResponse("/login")
+    return templates.TemplateResponse("details.html", {"request": request, "active_page": "details"})
+
+# ================= 🔐 认证 API =================
+@app.post("/api/auth/login")
+async def api_login(request: Request, username: str = Form(...), password: str = Form(...)):
+    headers = {"X-Emby-Authorization": 'MediaBrowser Client="EmbyPulse", Device="Web", DeviceId="EmbyPulseServer", Version="1.0.0"'}
+    payload = {"Username": username, "Pw": password}
     try:
+        url = f"{EMBY_HOST}/emby/Users/AuthenticateByName"
+        resp = requests.post(url, json=payload, headers=headers, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            user_info = data.get("User", {})
+            request.session["user"] = {
+                "id": user_info.get("Id"),
+                "name": user_info.get("Name"),
+                "is_admin": user_info.get("Policy", {}).get("IsAdministrator", False),
+                "token": data.get("AccessToken")
+            }
+            return {"status": "success"}
+        else:
+            return JSONResponse(status_code=401, content={"status": "error", "message": "用户名或密码错误"})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+@app.post("/api/auth/logout")
+async def api_logout(request: Request):
+    request.session.clear()
+    return {"status": "success"}
+
+@app.get("/api/auth/me")
+async def api_me(user: dict = Depends(get_current_user)):
+    return {"status": "success", "data": user}
+
+@app.get("/api/tmdb/backdrop")
+async def api_tmdb_backdrop():
+    fallback = ["https://image.tmdb.org/t/p/original/mSDsSDwaP3E7dEfUPWy4J0djt4O.jpg"]
+    if not TMDB_API_KEY: return {"url": random.choice(fallback)}
+    try:
+        url = f"https://api.themoviedb.org/3/trending/movie/week?api_key={TMDB_API_KEY}&language=zh-CN"
+        resp = requests.get(url, timeout=3)
+        if resp.status_code == 200:
+            results = resp.json().get("results", [])
+            valid_bgs = [m['backdrop_path'] for m in results if m.get('backdrop_path')]
+            if valid_bgs: return {"url": f"https://image.tmdb.org/t/p/original{random.choice(valid_bgs)}"}
+    except: pass
+    return {"url": random.choice(fallback)}
+
+# ================= 📊 核心业务 API (权限增强版) =================
+
+@app.get("/api/users")
+async def api_get_users(current_user: dict = Depends(get_current_user)):
+    try:
+        # 普通用户只能看自己
+        if not current_user['is_admin']:
+            return {"status": "success", "data": [{"UserId": current_user['id'], "UserName": current_user['name']}]}
+
         results = query_db("SELECT DISTINCT UserId FROM PlaybackActivity")
         if not results: return {"status": "success", "data": []}
         user_map = get_user_map()
@@ -87,9 +170,10 @@ async def api_get_users():
         return {"status": "success", "data": data}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-# ================= API: 仪表盘 =================
+# 🔥 补回：仪表盘统计
 @app.get("/api/stats/dashboard")
-async def api_dashboard(user_id: Optional[str] = None):
+async def api_dashboard(user_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if not current_user['is_admin']: user_id = current_user['id'] # 强制权限
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all':
@@ -105,8 +189,10 @@ async def api_dashboard(user_id: Optional[str] = None):
         }}
     except: return {"status": "error", "data": {"total_plays":0}}
 
+# 🔥 补回：最近播放
 @app.get("/api/stats/recent")
-async def api_recent_activity(user_id: Optional[str] = None):
+async def api_recent_activity(user_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if not current_user['is_admin']: user_id = current_user['id']
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all':
@@ -121,9 +207,7 @@ async def api_recent_activity(user_id: Optional[str] = None):
         for row in results:
             item = dict(row)
             item['UserName'] = user_map.get(item['UserId'], "User")
-            raw_name = item['ItemName']
-            clean_name = raw_name
-            if ' - ' in raw_name: clean_name = raw_name.split(' - ')[0]
+            clean_name = item['ItemName'].split(' - ')[0] if ' - ' in item['ItemName'] else item['ItemName']
             item['DisplayName'] = clean_name
             if item['ItemType'] == 'Episode':
                 if clean_name in seen_keys: continue
@@ -133,8 +217,9 @@ async def api_recent_activity(user_id: Optional[str] = None):
         return {"status": "success", "data": final_data}
     except Exception as e: return {"status": "error", "data": []}
 
+# 🔥 补回：实时会话 (这个需要 Emby Admin 权限，暂不限制前端调用，后端 Key 是 admin 的就行)
 @app.get("/api/live")
-async def api_live_sessions():
+async def api_live_sessions(current_user: dict = Depends(get_current_user)):
     if not EMBY_API_KEY: return {"status": "error"}
     try:
         res = requests.get(f"{EMBY_HOST}/emby/Sessions?api_key={EMBY_API_KEY}", timeout=2)
@@ -143,9 +228,10 @@ async def api_live_sessions():
     except: pass
     return {"status": "success", "data": []}
 
-# ================= API: 排行/洞察/图表 =================
+# 🔥 补回：Top 电影/剧集
 @app.get("/api/stats/top_movies")
-async def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by: str = 'count'):
+async def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by: str = 'count', current_user: dict = Depends(get_current_user)):
+    if not current_user['is_admin']: user_id = current_user['id']
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all':
@@ -153,13 +239,12 @@ async def api_top_movies(user_id: Optional[str] = None, category: str = 'all', s
             params.append(user_id)
         if category == 'Movie': where += " AND ItemType = 'Movie'"
         elif category == 'Episode': where += " AND ItemType = 'Episode'"
+        
         sql = f"SELECT ItemName, ItemId, ItemType, PlayDuration FROM PlaybackActivity {where}"
         rows = query_db(sql, params)
         aggregated = {}
         for row in rows:
-            raw_name = row['ItemName']
-            clean_name = raw_name
-            if ' - ' in raw_name: clean_name = raw_name.split(' - ')[0]
+            clean_name = row['ItemName'].split(' - ')[0] if ' - ' in row['ItemName'] else row['ItemName']
             if clean_name not in aggregated:
                 aggregated[clean_name] = {'ItemName': clean_name, 'ItemId': row['ItemId'], 'PlayCount': 0, 'TotalTime': 0}
             aggregated[clean_name]['PlayCount'] += 1
@@ -171,8 +256,10 @@ async def api_top_movies(user_id: Optional[str] = None, category: str = 'all', s
         return {"status": "success", "data": result_list[:50]}
     except: return {"status": "error", "data": []}
 
+# 🔥 补回：用户详情
 @app.get("/api/stats/user_details")
-async def api_user_details(user_id: Optional[str] = None):
+async def api_user_details(user_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if not current_user['is_admin']: user_id = current_user['id']
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all':
@@ -194,8 +281,10 @@ async def api_user_details(user_id: Optional[str] = None):
         return {"status": "success", "data": {"hourly": hourly_data, "devices": [dict(r) for r in device_res] if device_res else [], "logs": logs_data}}
     except: return {"status": "error", "data": {"hourly": {}, "devices": [], "logs": []}}
 
+# 🔥 补回：图表数据
 @app.get("/api/stats/chart")
-async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month'):
+async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month', current_user: dict = Depends(get_current_user)):
+    if not current_user['is_admin']: user_id = current_user['id']
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all':
@@ -218,9 +307,10 @@ async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month
         return {"status": "success", "data": data}
     except: return {"status": "error", "data": {}}
 
-# ================= API: 海报生成 =================
+# ================= 海报生成 (保留 V34 的权限修改) =================
 @app.get("/api/stats/poster_data")
-async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
+async def api_poster_data(user_id: Optional[str] = None, period: str = 'all', current_user: dict = Depends(get_current_user)):
+    if not current_user['is_admin']: user_id = current_user['id']
     try:
         where, params = "WHERE 1=1", []
         date_filter = ""
@@ -239,18 +329,14 @@ async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
         raw_sql = f"SELECT ItemName, ItemId, ItemType, PlayDuration FROM PlaybackActivity {where}"
         rows = query_db(raw_sql, params)
         
-        total_plays = 0
-        total_duration = 0
+        total_plays, total_duration = 0, 0
         aggregated = {} 
-
         if rows:
             for row in rows:
                 total_plays += 1
                 dur = row['PlayDuration'] or 0
                 total_duration += dur
-                raw_name = row['ItemName']
-                clean_name = raw_name
-                if ' - ' in raw_name: clean_name = raw_name.split(' - ')[0]
+                clean_name = row['ItemName'].split(' - ')[0] if ' - ' in row['ItemName'] else row['ItemName']
                 if clean_name not in aggregated:
                     aggregated[clean_name] = {'ItemName': clean_name, 'ItemId': row['ItemId'], 'Count': 0, 'Duration': 0}
                 aggregated[clean_name]['Count'] += 1
@@ -260,18 +346,11 @@ async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
         top_list = list(aggregated.values())
         top_list.sort(key=lambda x: x['Count'], reverse=True)
         top_list = top_list[:10]
-        total_hours = round(total_duration / 3600)
         
-        return {
-            "status": "success",
-            "data": {
-                "plays": total_plays,
-                "hours": total_hours,
-                "server_plays": server_plays,
-                "top_list": top_list,
-                "tags": ["观影达人"]
-            }
-        }
+        return {"status": "success", "data": {
+            "plays": total_plays, "hours": round(total_duration / 3600),
+            "server_plays": server_plays, "top_list": top_list
+        }}
     except Exception as e: return {"status": "error", "message": str(e), "data": {"plays": 0, "hours": 0, "server_plays": 0, "top_list": []}}
 
 # ================= 辅助 API =================
@@ -295,14 +374,11 @@ async def proxy_image(item_id: str, img_type: str):
     if img_type == 'primary' and EMBY_API_KEY:
         try:
             r = requests.get(f"{EMBY_HOST}/emby/Items?Ids={item_id}&Fields=SeriesId,ParentId&Limit=1&api_key={EMBY_API_KEY}", timeout=1)
-            if r.status_code == 200:
-                data = r.json()
-                if data.get("Items"):
-                    item = data["Items"][0]
-                    if item.get('SeriesId'): target_id = item.get('SeriesId')
-                    elif item.get('ParentId'): target_id = item.get('ParentId')
+            if r.status_code == 200 and r.json().get("Items"):
+                item = r.json()["Items"][0]
+                if item.get('SeriesId'): target_id = item.get('SeriesId')
+                elif item.get('ParentId'): target_id = item.get('ParentId')
         except: pass
-
     suffix = "/Images/Backdrop?maxWidth=800" if img_type == 'backdrop' else "/Images/Primary?maxHeight=400"
     try:
         headers = {"Cache-Control": "public, max-age=31536000", "Access-Control-Allow-Origin": "*"}
