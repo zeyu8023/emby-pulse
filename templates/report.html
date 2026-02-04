@@ -4,84 +4,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <script src="https://cdn.bootcdn.net/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <style>
-    /* ================= 全局设定 ================= */
+    /* ... (保留头部通用样式) ... */
     html, body { height: 100%; margin: 0; background: #f3f4f6; font-family: "Microsoft YaHei", -apple-system, sans-serif !important; overflow: hidden; }
     .app-container { display: flex; height: 100%; }
-    
-    /* ================= 预览区 ================= */
-    .preview-area {
-        flex: 1; overflow-y: auto; display: flex; justify-content: center; align-items: flex-start;
-        padding: 40px 20px; 
-        padding-top: 30px; 
-        background-color: #e5e7eb; -webkit-overflow-scrolling: touch;
-        padding-bottom: 140px; 
-    }
-
-    /* ================= PC端控制台 ================= */
-    .control-panel {
-        width: 360px; background: white; padding: 20px; border-left: 1px solid #ddd;
-        z-index: 50; display: block; box-shadow: -5px 0 15px rgba(0,0,0,0.05); overflow-y: auto;
-    }
-
-    /* ================= 移动端交互 ================= */
-    .mobile-toolbar {
-        display: none; position: fixed; bottom: 0; left: 0; width: 100%; height: 70px;
-        background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px);
-        border-top: 1px solid rgba(0,0,0,0.1); z-index: 500; 
-        align-items: center; justify-content: space-between;
-        padding: 0 15px; box-sizing: border-box; box-shadow: 0 -5px 20px rgba(0,0,0,0.1);
-    }
+    .preview-area { flex: 1; overflow-y: auto; display: flex; justify-content: center; align-items: flex-start; padding: 40px 20px; padding-top: 30px; background-color: #e5e7eb; -webkit-overflow-scrolling: touch; padding-bottom: 140px; }
+    .control-panel { width: 360px; background: white; padding: 20px; border-left: 1px solid #ddd; z-index: 50; display: block; box-shadow: -5px 0 15px rgba(0,0,0,0.05); overflow-y: auto; }
+    .mobile-toolbar { display: none; position: fixed; bottom: 0; left: 0; width: 100%; height: 70px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-top: 1px solid rgba(0,0,0,0.1); z-index: 500; align-items: center; justify-content: space-between; padding: 0 15px; box-sizing: border-box; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); }
     .toolbar-btn { flex: 1; height: 44px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
     .btn-config { background: #f3f4f6; color: #333; margin-right: 10px; border: 1px solid #ddd; }
     .btn-save { background: #16a34a; color: white; flex: 1.5; box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3); }
-
-    .bottom-sheet {
-        display: block; visibility: hidden; position: fixed; bottom: 0; left: 0; width: 100%;
-        background: white; border-radius: 20px 20px 0 0; padding: 25px; padding-bottom: 40px;
-        box-shadow: 0 -10px 40px rgba(0,0,0,0.2); z-index: 600;
-        transform: translateY(100%); transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-        max-height: 85vh; overflow-y: auto;
-    }
+    .bottom-sheet { display: block; visibility: hidden; position: fixed; bottom: 0; left: 0; width: 100%; background: white; border-radius: 20px 20px 0 0; padding: 25px; padding-bottom: 40px; box-shadow: 0 -10px 40px rgba(0,0,0,0.2); z-index: 600; transform: translateY(100%); transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); max-height: 85vh; overflow-y: auto; }
     .bottom-sheet.active { visibility: visible; transform: translateY(0); }
-
     .sheet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .sheet-title { font-weight: 900; font-size: 18px; color: #333; }
     .sheet-close { width: 30px; height: 30px; border-radius: 50%; background: #f3f4f6; display: flex; align-items: center; justify-content: center; color: #666; cursor: pointer; }
-
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 550; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
     .overlay.active { opacity: 1; pointer-events: auto; }
-
-    @media (max-width: 768px) {
-        .app-container { flex-direction: column; }
-        .control-panel { display: none !important; } 
-        .mobile-toolbar { display: flex; } 
-        .preview-area { align-items: flex-start; } 
-    }
-
-    /* ================= 海报样式 ================= */
-    :root { --theme-bg: #1a1a1a; --theme-card: rgba(255,255,255,0.08); --theme-text: white; --theme-highlight: #eab308; }
+    @media (max-width: 768px) { .app-container { flex-direction: column; } .control-panel { display: none !important; } .mobile-toolbar { display: flex; } .preview-area { align-items: flex-start; } }
     
-    .poster-canvas {
-        width: 400px; 
-        height: fit-content; 
-        min-height: auto;
-        /* 🔥 V33: 极致紧凑，底部只留 20px */
-        padding-bottom: 20px; 
-        
-        background: var(--theme-bg); color: var(--theme-text);
-        position: relative; overflow: hidden; display: flex; flex-direction: column;
-        box-shadow: 0 30px 60px rgba(0,0,0,0.5);
-        line-height: 1.6; font-family: "Microsoft YaHei", sans-serif !important;
-        transition: background 0.3s; transform-origin: top center;
-    }
+    :root { --theme-bg: #1a1a1a; --theme-card: rgba(255,255,255,0.08); --theme-text: white; --theme-highlight: #eab308; }
+    .poster-canvas { width: 400px; height: fit-content; min-height: auto; padding-bottom: 20px; background: var(--theme-bg); color: var(--theme-text); position: relative; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 30px 60px rgba(0,0,0,0.5); line-height: 1.6; font-family: "Microsoft YaHei", sans-serif !important; transition: background 0.3s; transform-origin: top center; }
     #poster-bg-img { position: absolute; inset: 0; z-index: 0; background-size: cover; background-position: center; filter: blur(50px) brightness(0.4); transform: scale(1.2); opacity: 0; transition: opacity 0.5s; height: 100%; }
     #poster-bg-gradient { position: absolute; inset: 0; z-index: 1; background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.5) 100%); height: 100%; }
-    
     .p-content { position: relative; z-index: 10; padding: 40px 30px; display: block; }
-    
     .p-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
     .user-box { display: flex; align-items: center; gap: 12px; }
     
+    /* 🔥 修正头像 CSS */
     .avatar { 
         width: 54px; height: 54px; border-radius: 50%; 
         background-color: #e5e7eb; 
@@ -90,7 +39,10 @@
         color: white; 
         border: 2px solid rgba(255,255,255,0.8); 
         box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-        background-size: cover; background-position: center; 
+        /* 强制使用 cover 填充，防止变形 */
+        background-size: cover !important; 
+        background-position: center !important; 
+        background-repeat: no-repeat !important;
         z-index: 20; position: relative;
     }
     
@@ -98,12 +50,10 @@
     .user-info p { font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px; margin: 0; padding-bottom: 2px; }
     .server-pill { background: var(--theme-card); padding: 4px 10px; border-radius: 20px; font-size: 10px; border: 1px solid rgba(255,255,255,0.1); text-align: center; }
     .server-pill span { display: block; font-weight: 900; font-size: 12px; color: #4ade80; padding-bottom: 2px; }
-    
     .stats-row { display: flex; gap: 10px; margin-bottom: 25px; }
     .stat-card { flex: 1; background: var(--theme-card); padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); text-align: center; backdrop-filter: blur(10px); }
     .stat-val { font-size: 28px; font-weight: 900; line-height: 1; margin-bottom: 4px; padding-bottom: 4px; }
     .stat-label { font-size: 9px; opacity: 0.6; text-transform: uppercase; font-weight: bold; }
-
     .podium-container { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 10px; align-items: end; margin-bottom: 30px; margin-top: 10px; }
     .podium-item { position: relative; display: flex; flex-direction: column; align-items: center; }
     .podium-cover { width: 100%; aspect-ratio: 2/3; border-radius: 8px; background-color: #333; background-size: cover; background-position: center; box-shadow: 0 10px 20px rgba(0,0,0,0.3); position: relative; border: 2px solid transparent; }
@@ -117,7 +67,6 @@
     .podium-info { text-align: center; margin-top: 8px; width: 100%; }
     .podium-title { font-size: 11px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; padding-bottom: 4px; }
     .podium-meta { font-size: 9px; opacity: 0.7; }
-
     .rank-list { display: flex; flex-direction: column; gap: 8px; }
     .rank-row { display: flex; align-items: center; padding: 10px 10px; background: var(--theme-card); border-radius: 10px; backdrop-filter: blur(5px); min-height: 50px; }
     .rank-idx { font-size: 12px; font-weight: 900; opacity: 0.4; width: 25px; text-align: center; }
@@ -125,14 +74,8 @@
     .rank-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
     .rank-name { font-size: 12px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 4px; margin-bottom: -2px; }
     .rank-meta-row { font-size: 9px; opacity: 0.7; display: flex; gap: 8px; }
-    
-    /* 🔥 V33: Footer 极限上移，减少留白 */
-    .p-footer { 
-        margin-top: 15px; 
-        text-align: center; opacity: 0.4; font-size: 10px; letter-spacing: 2px; 
-    }
+    .p-footer { margin-top: 15px; text-align: center; opacity: 0.4; font-size: 10px; letter-spacing: 2px; }
     .empty-box { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.4; min-height: 200px; text-align: center; }
-
     .ctrl-label { font-size: 12px; font-weight: bold; color: #666; margin-bottom: 8px; display: block; }
     .btn-group { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
     .btn { flex: 1; padding: 10px; border: 1px solid #ddd; background: #fff; font-weight: bold; border-radius: 8px; font-size: 12px; cursor: pointer; min-width: 60px; white-space: nowrap; }
@@ -360,7 +303,6 @@
         avatarEl.style.backgroundImage = 'none';
         avatarEl.innerText = '';
         
-        // 🔥 V33: 全服用户特殊处理
         if (currentUserId === 'all') {
             avatarEl.style.background = 'linear-gradient(135deg, #1a1a1a, #333)';
             avatarEl.innerHTML = '<i class="fa-solid fa-server"></i>';
@@ -392,7 +334,6 @@
         selects.forEach(sel => {
             sel.innerHTML = '';
             
-            // 🔥 V33: 插入全服选项
             const optAll = document.createElement('option');
             optAll.value = 'all';
             optAll.innerText = '全服概览 (All Users)';
@@ -407,7 +348,6 @@
             }
         });
         
-        // 默认选中全服
         changeUser('all');
     }
 
@@ -416,14 +356,12 @@
         document.querySelectorAll('#user-select').forEach(s => s.value = uid);
         
         const sel = document.querySelector('#user-select');
-        // V33: 正确获取文案（包含全服）
         for(let opt of sel.options) {
             if(opt.value === uid) {
                 currentUserName = opt.text;
                 break;
             }
         }
-        // 如果是全服，简化显示名字
         if(uid === 'all') currentUserName = 'Emby Server';
 
         document.getElementById('p-user').innerText = currentUserName;
@@ -441,7 +379,6 @@
     }
 
     async function loadData() {
-        // V33: 允许 currentUserId 为 'all'
         if(!currentUserId) return;
         const res = await fetch(`/api/stats/poster_data?user_id=${currentUserId}&period=${currentPeriod}`);
         const json = await res.json();
