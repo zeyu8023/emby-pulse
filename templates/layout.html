@@ -2,72 +2,115 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}EmbyPulse{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{% block title %}EmbyPulse 映迹{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
-        /* 字体优化 */
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-        /* 滚动条美化 */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 3px; }
-        ::-webkit-scrollbar-track { background: transparent; }
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;500;700;900&display=swap');
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f9fafb; }
+        .nav-item.active { background-color: #f0fdf4; color: #15803d; border-right: 3px solid #15803d; font-weight: 700; }
+        
+        #mobile-sidebar { transition: transform 0.3s ease-in-out; }
+        .sidebar-open { transform: translateX(0) !important; }
+        .sidebar-closed { transform: translateX(-100%); }
+        
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
     {% block head %}{% endblock %}
 </head>
-<body class="bg-gray-100 text-gray-800">
+<body class="flex h-screen overflow-hidden text-gray-800 bg-gray-50">
 
-    <aside class="hidden md:flex flex-col w-64 h-screen fixed left-0 top-0 bg-white border-r border-gray-200 z-50">
-        <div class="p-6 border-b border-gray-100 flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-blue-500 flex items-center justify-center text-white font-bold text-lg shadow-md">P</div>
-            <div class="font-extrabold text-xl tracking-tight text-gray-800">EmbyPulse</div>
-            <span class="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded ml-auto font-mono">
-                {% if user and user.is_admin %}ADMIN{% else %}USER{% endif %}
-            </span>
-        </div>
-
-        <nav class="flex-1 overflow-y-auto p-4 space-y-1">
-            <div class="px-3 mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
-                {% if user and user.is_admin %}Console{% else %}My Space{% endif %}
+    <aside class="w-64 bg-white border-r border-gray-200 flex-col hidden md:flex z-50 shadow-sm relative shrink-0">
+        <div class="h-16 flex items-center px-6 border-b border-gray-100">
+            <i class="fa-solid fa-heart-pulse text-green-600 text-2xl mr-3"></i>
+            <div>
+                <span class="text-xl font-black tracking-tight text-gray-900 leading-none block">EmbyPulse</span>
+                <span class="text-[10px] text-gray-400 font-bold tracking-widest uppercase block mt-0.5">映 迹</span>
             </div>
-            
-            <a href="/" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm {% if active_page == 'dashboard' %}bg-emerald-50 text-emerald-600 font-bold{% else %}text-gray-600 hover:bg-gray-50 hover:text-gray-900{% endif %}">
-                <i class="fa-solid fa-chart-line w-5 text-center"></i> 仪表盘
+        </div>
+        <nav class="flex-1 px-4 py-6 space-y-2">
+            <a href="/" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'dashboard' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-chart-line w-6"></i> <span class="ml-2">仪表盘</span>
             </a>
-            <a href="/content" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm {% if active_page == 'content' %}bg-emerald-50 text-emerald-600 font-bold{% else %}text-gray-600 hover:bg-gray-50 hover:text-gray-900{% endif %}">
-                <i class="fa-solid fa-trophy w-5 text-center"></i> 内容排行
+            <a href="/content" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'content' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-film w-6"></i> <span class="ml-2">内容排行</span>
             </a>
-            <a href="/details" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm {% if active_page == 'details' %}bg-emerald-50 text-emerald-600 font-bold{% else %}text-gray-600 hover:bg-gray-50 hover:text-gray-900{% endif %}">
-                <i class="fa-solid fa-magnifying-glass-chart w-5 text-center"></i> 数据洞察
+            <a href="/details" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'details' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-magnifying-glass-chart w-6"></i> <span class="ml-2">数据洞察</span>
             </a>
-
-            <div class="px-3 mt-6 mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider">Tools</div>
-            
-            <a href="/report" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm {% if active_page == 'report' %}bg-emerald-50 text-emerald-600 font-bold{% else %}text-gray-600 hover:bg-gray-50 hover:text-gray-900{% endif %}">
-                <i class="fa-solid fa-wand-magic-sparkles w-5 text-center"></i> 映迹工坊
+            <a href="/report" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'report' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-wand-magic-sparkles w-6"></i> <span class="ml-2">映迹工坊</span>
             </a>
         </nav>
-
         <div class="p-4 border-t border-gray-100">
-            <button onclick="logout()" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg text-sm font-bold transition-colors">
-                <i class="fa-solid fa-right-from-bracket"></i> 退出登录
-            </button>
+            <div class="flex items-center">
+                <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center font-bold text-green-700">A</div>
+                <div class="ml-3">
+                    <p class="text-sm font-medium text-gray-900">管理员</p>
+                    <p class="text-xs text-green-600 flex items-center"><span class="w-2 h-2 bg-green-500 rounded-full mr-1"></span>在线</p>
+                </div>
+            </div>
         </div>
     </aside>
 
-    <main class="md:ml-64 min-h-screen">
-        {% block content %}{% endblock %}
+    <div id="mobile-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/50 z-[60] hidden backdrop-blur-sm transition-opacity"></div>
+    <aside id="mobile-sidebar" class="fixed inset-y-0 left-0 w-64 bg-white z-[70] shadow-2xl flex flex-col sidebar-closed md:hidden">
+        <div class="h-16 flex items-center justify-between px-6 border-b border-gray-100 bg-gray-50/50">
+            <div class="flex items-center">
+                <i class="fa-solid fa-heart-pulse text-green-600 text-xl mr-2"></i>
+                <span class="text-lg font-black text-gray-900">EmbyPulse</span>
+            </div>
+            <button onclick="toggleSidebar()" class="text-gray-500"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+            <a href="/" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'dashboard' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-chart-line w-6"></i> <span class="ml-2">仪表盘</span>
+            </a>
+            <a href="/content" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'content' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-film w-6"></i> <span class="ml-2">内容排行</span>
+            </a>
+            <a href="/details" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'details' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-magnifying-glass-chart w-6"></i> <span class="ml-2">数据洞察</span>
+            </a>
+            <a href="/report" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 {% if active_page == 'report' %}active{% else %}text-gray-500{% endif %}">
+                <i class="fa-solid fa-wand-magic-sparkles w-6"></i> <span class="ml-2">映迹工坊</span>
+            </a>
+        </nav>
+    </aside>
+
+    <main class="flex-1 flex flex-col h-full overflow-hidden relative w-full">
+        <header class="h-14 bg-white border-b border-gray-200 flex items-center px-4 md:hidden shrink-0 justify-between z-40 sticky top-0">
+            <button onclick="toggleSidebar()" class="text-gray-600 p-2 -ml-2"><i class="fa-solid fa-bars text-xl"></i></button>
+            <span class="font-bold text-gray-800">EmbyPulse</span>
+            <div class="w-8"></div>
+        </header>
+
+        <div class="flex-1 overflow-y-auto overflow-x-hidden relative w-full custom-scrollbar bg-gray-50/50">
+            {% block content %}{% endblock %}
+        </div>
     </main>
 
     {% block scripts %}{% endblock %}
+    
     <script>
-        async function logout() {
-            if(confirm('确定要退出登录吗？')) {
-                try {
-                    await fetch('/api/auth/logout', { method: 'POST' });
-                    window.location.href = '/login';
-                } catch(e) { alert('注销失败'); }
+        function toggleSidebar() {
+            const sidebar = document.getElementById('mobile-sidebar');
+            const overlay = document.getElementById('mobile-overlay');
+            const isClosed = sidebar.classList.contains('sidebar-closed');
+            
+            if (isClosed) {
+                sidebar.classList.remove('sidebar-closed');
+                sidebar.classList.add('sidebar-open');
+                overlay.classList.remove('hidden');
+            } else {
+                sidebar.classList.add('sidebar-closed');
+                sidebar.classList.remove('sidebar-open');
+                overlay.classList.add('hidden');
             }
         }
     </script>
