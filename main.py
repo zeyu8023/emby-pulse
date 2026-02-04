@@ -18,7 +18,7 @@ EMBY_HOST = os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/')
 EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip()
 FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
-print(f"--- EmbyPulse V19 (Full Features + Base64 Fix) ---")
+print(f"--- EmbyPulse V19 (Final Fix) ---")
 print(f"DB Path: {DB_PATH}")
 
 app = FastAPI()
@@ -107,7 +107,7 @@ async def api_dashboard(user_id: Optional[str] = None):
 
 @app.get("/api/stats/recent")
 async def api_recent_activity(user_id: Optional[str] = None):
-    # 首页最近播放：智能聚合，优先显示剧集名
+    # 首页最近播放：智能聚合
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all':
@@ -129,13 +129,11 @@ async def api_recent_activity(user_id: Optional[str] = None):
             
             raw_name = item['ItemName']
             clean_name = raw_name
-            # 清洗名称
             if ' - ' in raw_name:
                 clean_name = raw_name.split(' - ')[0]
             
             item['DisplayName'] = clean_name
             
-            # 剧集去重
             if item['ItemType'] == 'Episode':
                 if clean_name in seen_keys: continue
                 seen_keys.add(clean_name)

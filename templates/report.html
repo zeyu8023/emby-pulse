@@ -21,8 +21,8 @@
         box-shadow: 0 30px 60px rgba(0,0,0,0.5);
         color: white;
         display: flex; flex-direction: column;
-        /* 防止字体偏移 */
-        line-height: 1.5;
+        /* 防止字体偏移的关键：宽松行高 */
+        line-height: 1.6;
     }
 
     /* 动态背景 (Base64) */
@@ -42,15 +42,16 @@
     .p-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
     .user-box { display: flex; align-items: center; gap: 12px; }
     .avatar { width: 56px; height: 56px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 900; border: 2px solid rgba(255,255,255,0.3); }
-    .user-info h1 { font-size: 26px; font-weight: 900; margin: 0; padding-top: 4px; }
-    .user-info p { font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px; margin: 0; margin-top: 2px; }
+    /* 🔥 修复：增加 padding-bottom 防止切头 */
+    .user-info h1 { font-size: 26px; font-weight: 900; margin: 0; padding-top: 4px; padding-bottom: 4px; }
+    .user-info p { font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px; margin: 0; }
     .server-pill { background: rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 20px; font-size: 10px; border: 1px solid rgba(255,255,255,0.1); text-align: center; backdrop-filter: blur(5px); }
-    .server-pill span { display: block; font-weight: 900; font-size: 14px; color: #4ade80; }
+    .server-pill span { display: block; font-weight: 900; font-size: 14px; color: #4ade80; padding-bottom: 2px; }
 
     /* Stats */
     .stats-row { display: flex; gap: 15px; margin-bottom: 30px; }
     .stat-card { flex: 1; background: rgba(255,255,255,0.08); padding: 15px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); text-align: center; backdrop-filter: blur(10px); }
-    .stat-val { font-size: 32px; font-weight: 900; line-height: 1; margin-bottom: 4px; }
+    .stat-val { font-size: 32px; font-weight: 900; line-height: 1; margin-bottom: 4px; padding-bottom: 4px; }
     .stat-label { font-size: 10px; opacity: 0.6; text-transform: uppercase; font-weight: bold; }
 
     /* Top 1 (Base64 BG) */
@@ -59,13 +60,15 @@
     .top1-mask { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); }
     .top1-info { position: absolute; bottom: 15px; left: 15px; right: 15px; }
     .top1-badge { display: inline-block; background: #eab308; color: black; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 4px; margin-bottom: 6px; }
-    .top1-title { font-size: 22px; font-weight: bold; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 2px; }
+    /* 🔥 修复：增加 padding 防止文字显示不全 */
+    .top1-title { font-size: 22px; font-weight: bold; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 4px; }
 
     /* Rank List */
     .rank-list { display: flex; flex-direction: column; gap: 8px; }
     .rank-row { display: flex; align-items: center; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 12px; backdrop-filter: blur(5px); }
     .rank-idx { font-size: 14px; font-weight: 900; color: rgba(255,255,255,0.4); width: 30px; }
-    .rank-name { flex: 1; font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
+    /* 🔥 修复：宽松高度 */
+    .rank-name { flex: 1; font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; padding-bottom: 2px; }
     .rank-data { text-align: right; font-size: 10px; opacity: 0.7; }
     .rank-data span { display: block; }
 
@@ -223,7 +226,7 @@
         const json = await res.json();
         const data = json.data;
 
-        // 1. 更新文案
+        // 1. 动态更新文案 (修复标题写死问题)
         const periodName = periodMap[currentPeriod];
         document.getElementById('p-period').innerText = `${periodName}观影报告`;
         document.getElementById('top1-badge').innerText = `TOP 1 ${periodName}最爱`;
@@ -261,6 +264,7 @@
             let html = '';
             const max = Math.min(list.length, 10);
             for(let i=1; i<max; i++) {
+                // 🔥 修复：增加时长显示
                 const hours = Math.round(list[i].Duration/3600);
                 const timeText = hours > 0 ? `${hours}h` : '<1h';
                 html += `
