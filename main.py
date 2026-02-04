@@ -3,6 +3,7 @@ import os
 import uvicorn
 import requests
 import datetime
+import json
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -12,16 +13,12 @@ from typing import Optional
 
 # ================= 配置区域 =================
 PORT = 10307
-# 数据库路径
 DB_PATH = os.getenv("DB_PATH", "/emby-data/playback_reporting.db")
-# Emby 地址
 EMBY_HOST = os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/')
-# Emby API Key
 EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip()
-# 默认图片
 FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
-print(f"--- EmbyPulse V17 (Compatibility Fix) Starting ---")
+print(f"--- EmbyPulse V18 (All Features Restored) ---")
 print(f"DB Path: {DB_PATH}")
 
 app = FastAPI()
@@ -40,9 +37,7 @@ templates = Jinja2Templates(directory="templates")
 
 # ================= 数据库工具 =================
 def query_db(query, args=(), one=False):
-    if not os.path.exists(DB_PATH): 
-        print(f"❌ Error: DB file not found: {DB_PATH}")
-        return None
+    if not os.path.exists(DB_PATH): return None
     try:
         conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
@@ -75,7 +70,7 @@ async def page_report(request: Request): return templates.TemplateResponse("repo
 @app.get("/details")
 async def page_details(request: Request): return templates.TemplateResponse("details.html", {"request": request, "active_page": "details"})
 
-# ================= API 接口 =================
+# ================= API: 基础数据 =================
 
 @app.get("/api/users")
 async def api_get_users():
@@ -92,6 +87,8 @@ async def api_get_users():
         data.sort(key=lambda x: x['UserName'])
         return {"status": "success", "data": data}
     except Exception as e: return {"status": "error", "message": str(e)}
+
+# ================= API: 仪表盘 (Dashboard) =================
 
 @app.get("/api/stats/dashboard")
 async def api_dashboard(user_id: Optional[str] = None):
@@ -110,17 +107,15 @@ async def api_dashboard(user_id: Optional[str] = None):
         }}
     except: return {"status": "error", "data": {"total_plays":0}}
 
-# === 🔥 首页最近播放 (智能聚合修复版) ===
 @app.get("/api/stats/recent")
 async def api_recent_activity(user_id: Optional[str] = None):
-    print(f"\n🔍 [Recent] Fetching for {user_id}")
+    # 首页最近播放：智能聚合，不依赖 SeriesName
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all':
             where += " AND UserId = ?"
             params.append(user_id)
             
-        # 🔥 修正：移除了 SeriesName，防止报错
         sql = f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 200"
         results = query_db(sql, params)
         
@@ -128,38 +123,30 @@ async def api_recent_activity(user_id: Optional[str] = None):
         
         user_map = get_user_map()
         final_data = []
-        seen_keys = set() # 用于去重
+        seen_keys = set() 
 
         for row in results:
             item = dict(row)
             item['UserName'] = user_map.get(item['UserId'], "User")
             
-            # 智能清洗名称
             raw_name = item['ItemName']
             clean_name = raw_name
             
-            # 如果包含 " - S01" 或 " - 第" 等特征，截取前面部分
+            # 清洗名称 (模拟 SeriesName)
             if ' - ' in raw_name:
-                parts = raw_name.split(' - ')
-                clean_name = parts[0]
+                clean_name = raw_name.split(' - ')[0]
             
             item['DisplayName'] = clean_name
             
-            # 聚合逻辑：如果是剧集，且已经出现过这个剧名，则跳过（只显示最近的一集）
-            # 如果是电影，则不去重（可能重刷）
             if item['ItemType'] == 'Episode':
-                if clean_name in seen_keys:
-                    continue
+                if clean_name in seen_keys: continue
                 seen_keys.add(clean_name)
             
             final_data.append(item)
-            if len(final_data) >= 20: break # 限制返回数量
+            if len(final_data) >= 20: break 
 
-        print(f"✅ [Recent] Aggregated {len(final_data)} items")
         return {"status": "success", "data": final_data}
-    except Exception as e: 
-        print(f"❌ [Recent] Error: {e}")
-        return {"status": "error", "data": []}
+    except Exception as e: return {"status": "error", "data": []}
 
 @app.get("/api/live")
 async def api_live_sessions():
@@ -171,7 +158,124 @@ async def api_live_sessions():
     except: pass
     return {"status": "success", "data": []}
 
-# === 🔥 海报数据接口 (智能聚合修复版) ===
+# ================= API: 内容排行 (Content Ranking) [已恢复] =================
+
+@app.get("/api/stats/top_movies")
+async def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by: str = 'count'):
+    # 内容排行页面的数据源
+    try:
+        where, params = "WHERE 1=1", []
+        if user_id and user_id != 'all':
+            where += " AND UserId = ?"
+            params.append(user_id)
+        
+        if category == 'Movie': where += " AND ItemType = 'Movie'"
+        elif category == 'Episode': where += " AND ItemType = 'Episode'"
+        
+        # 为了兼容性，我们先取出所有相关记录，然后在 Python 里聚合
+        # 这样即使没有 SeriesName 也能排行
+        sql = f"SELECT ItemName, ItemId, ItemType, PlayDuration FROM PlaybackActivity {where}"
+        rows = query_db(sql, params)
+        
+        aggregated = {}
+        for row in rows:
+            raw_name = row['ItemName']
+            # 聚合逻辑
+            clean_name = raw_name
+            if ' - ' in raw_name: clean_name = raw_name.split(' - ')[0]
+            
+            if clean_name not in aggregated:
+                aggregated[clean_name] = {'ItemName': clean_name, 'ItemId': row['ItemId'], 'PlayCount': 0, 'TotalTime': 0}
+            
+            aggregated[clean_name]['PlayCount'] += 1
+            aggregated[clean_name]['TotalTime'] += (row['PlayDuration'] or 0)
+            aggregated[clean_name]['ItemId'] = row['ItemId'] # Keep latest ID
+
+        # 转换为列表并排序
+        result_list = list(aggregated.values())
+        if sort_by == 'time':
+            result_list.sort(key=lambda x: x['TotalTime'], reverse=True)
+        else:
+            result_list.sort(key=lambda x: x['PlayCount'], reverse=True)
+            
+        return {"status": "success", "data": result_list[:50]} # 返回前50
+    except Exception as e: 
+        print(f"❌ Top Movies Error: {e}")
+        return {"status": "error", "data": []}
+
+# ================= API: 数据洞察 (Details) [已恢复] =================
+
+@app.get("/api/stats/user_details")
+async def api_user_details(user_id: Optional[str] = None):
+    # 数据洞察页面的数据源：小时分布、设备分布、最近日志
+    try:
+        where, params = "WHERE 1=1", []
+        if user_id and user_id != 'all':
+            where += " AND UserId = ?"
+            params.append(user_id)
+        
+        # 1. 24小时分布
+        hourly_res = query_db(f"SELECT strftime('%H', DateCreated) as Hour, COUNT(*) as Plays FROM PlaybackActivity {where} GROUP BY Hour ORDER BY Hour", params)
+        hourly_data = {str(i).zfill(2): 0 for i in range(24)}
+        if hourly_res:
+            for r in hourly_res: hourly_data[r['Hour']] = r['Plays']
+            
+        # 2. 设备分布 (兼容 ClientName)
+        device_res = query_db(f"SELECT COALESCE(DeviceName, ClientName, 'Unknown') as Device, COUNT(*) as Plays FROM PlaybackActivity {where} GROUP BY Device ORDER BY Plays DESC LIMIT 10", params)
+        
+        # 3. 详细日志 (最近100条)
+        logs_res = query_db(f"SELECT DateCreated, ItemName, PlayDuration, COALESCE(DeviceName, ClientName) as Device, UserId FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 100", params)
+        
+        user_map = get_user_map()
+        logs_data = []
+        if logs_res:
+            for r in logs_res:
+                l = dict(r)
+                l['UserName'] = user_map.get(l['UserId'], "User")
+                logs_data.append(l)
+                
+        return {"status": "success", "data": {
+            "hourly": hourly_data, 
+            "devices": [dict(r) for r in device_res] if device_res else [],
+            "logs": logs_data
+        }}
+    except Exception as e: 
+        print(f"❌ User Details Error: {e}")
+        return {"status": "error", "data": {"hourly": {}, "devices": [], "logs": []}}
+
+# ================= API: 趋势图表 (Chart) [已恢复] =================
+
+@app.get("/api/stats/chart")
+async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month'):
+    try:
+        where, params = "WHERE 1=1", []
+        if user_id and user_id != 'all':
+            where += " AND UserId = ?"
+            params.append(user_id)
+        
+        sql = ""
+        # 过去12个月
+        if dimension == 'year':
+             where += " AND DateCreated > date('now', '-12 months')"
+             sql = f"SELECT strftime('%Y-%m', DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Label ORDER BY Label"
+        # 过去30天
+        elif dimension == 'day':
+            where += " AND DateCreated > date('now', '-30 days')"
+            sql = f"SELECT date(DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Label ORDER BY Label"
+        # 默认
+        else:
+            where += " AND DateCreated > date('now', '-6 months')"
+            sql = f"SELECT strftime('%Y-%m', DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Label ORDER BY Label"
+            
+        results = query_db(sql, params)
+        data = {}
+        if results:
+            for r in results: data[r['Label']] = int(r['Duration'])
+        return {"status": "success", "data": data}
+    except: return {"status": "error", "data": {}}
+
+# ================= API: 海报生成 (Poster) =================
+
 @app.get("/api/stats/poster_data")
 async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
     print(f"\n📊 [Poster] User={user_id}, Period={period}")
@@ -192,7 +296,6 @@ async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
             params.append(user_id)
         where += date_filter
 
-        # 🔥 修正：移除了 SeriesName，防止报错
         raw_sql = f"SELECT ItemName, ItemId, ItemType, PlayDuration FROM PlaybackActivity {where}"
         rows = query_db(raw_sql, params)
         
@@ -206,16 +309,10 @@ async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
                 dur = row['PlayDuration'] or 0
                 total_duration += dur
                 
+                # 智能聚合
                 raw_name = row['ItemName']
                 clean_name = raw_name
-                
-                # --- 核心聚合逻辑 ---
-                # 针对 "剧名 - S01E01 - 标题" 这种格式进行清洗
-                if ' - ' in raw_name:
-                    # 尝试分割
-                    parts = raw_name.split(' - ')
-                    # 取第一部分作为剧名/片名
-                    clean_name = parts[0]
+                if ' - ' in raw_name: clean_name = raw_name.split(' - ')[0]
                 
                 if clean_name not in aggregated:
                     aggregated[clean_name] = {'ItemName': clean_name, 'ItemId': row['ItemId'], 'Count': 0, 'Duration': 0}
@@ -230,8 +327,6 @@ async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
 
         total_hours = round(total_duration / 3600)
         
-        print(f"   ✅ Data Ready: Plays={total_plays}, TopList={len(top_list)}")
-
         return {
             "status": "success",
             "data": {
@@ -242,9 +337,23 @@ async def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
                 "tags": ["观影达人"]
             }
         }
-    except Exception as e:
-        print(f"❌ [Poster] Error: {e}")
-        return {"status": "error", "message": str(e), "data": {"plays": 0, "hours": 0, "server_plays": 0, "top_list": []}}
+    except Exception as e: return {"status": "error", "message": str(e), "data": {"plays": 0, "hours": 0, "server_plays": 0, "top_list": []}}
+
+# ================= 辅助 API =================
+
+@app.get("/api/stats/top_users_list")
+async def api_top_users_list():
+    try:
+        res = query_db("SELECT UserId, COUNT(*) as Plays, SUM(PlayDuration) as TotalTime FROM PlaybackActivity GROUP BY UserId ORDER BY TotalTime DESC LIMIT 5")
+        if not res: return {"status": "success", "data": []}
+        user_map = get_user_map()
+        data = []
+        for row in res:
+            u = dict(row)
+            u['UserName'] = user_map.get(u['UserId'], f"User {str(u['UserId'])[:5]}")
+            data.append(u)
+        return {"status": "success", "data": data}
+    except: return {"status": "success", "data": []}
 
 @app.get("/api/proxy/image/{item_id}/{img_type}")
 async def proxy_image(item_id: str, img_type: str):
@@ -266,63 +375,6 @@ async def proxy_image(item_id: str, img_type: str):
         if resp.status_code == 200: return Response(content=resp.content, media_type="image/jpeg")
     except: pass
     return RedirectResponse(FALLBACK_IMAGE_URL)
-
-# === 其他接口 ===
-@app.get("/api/stats/chart")
-async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month'):
-    try:
-        where, params = "WHERE 1=1", []
-        if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
-        sql = f"SELECT strftime('%Y-%m', DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Label ORDER BY Label DESC LIMIT 6"
-        results = query_db(sql, params)
-        data = {}
-        if results: 
-            for r in results: data[r['Label']] = int(r['Duration'])
-        return {"status": "success", "data": data}
-    except: return {"status": "error", "data": {}}
-
-@app.get("/api/stats/top_users_list")
-async def api_top_users_list():
-    try:
-        res = query_db("SELECT UserId, COUNT(*) as Plays, SUM(PlayDuration) as TotalTime FROM PlaybackActivity GROUP BY UserId ORDER BY TotalTime DESC LIMIT 5")
-        if not res: return {"status": "success", "data": []}
-        user_map = get_user_map()
-        data = []
-        for row in res:
-            u = dict(row)
-            u['UserName'] = user_map.get(u['UserId'], f"User {str(u['UserId'])[:5]}")
-            data.append(u)
-        return {"status": "success", "data": data}
-    except: return {"status": "success", "data": []}
-
-@app.get("/api/stats/top_movies")
-async def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by: str = 'count'):
-    return {"status": "success", "data": []}
-
-@app.get("/api/stats/badges")
-async def api_badges(user_id: Optional[str] = None):
-    try:
-        where, params = "WHERE 1=1", []
-        if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
-        badges = []
-        night_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND strftime('%H', DateCreated) BETWEEN '02' AND '05'", params)
-        if night_res and night_res[0]['c'] > 5:
-            badges.append({"id": "night", "name": "修仙党", "icon": "fa-moon", "color": "text-purple-500", "bg": "bg-purple-100", "desc": "深夜是灵魂最自由的时刻"})
-        return {"status": "success", "data": badges}
-    except: return {"status": "success", "data": []}
-
-@app.get("/api/stats/monthly_stats")
-async def api_monthly_stats(user_id: Optional[str] = None):
-    try:
-        where, params = "WHERE DateCreated > date('now', '-12 months')", []
-        if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
-        sql = f"SELECT strftime('%Y-%m', DateCreated) as Month, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Month ORDER BY Month"
-        results = query_db(sql, params)
-        data = {}
-        if results:
-            for r in results: data[r['Month']] = int(r['Duration'])
-        return {"status": "success", "data": data}
-    except: return {"status": "error", "data": {}}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT)
