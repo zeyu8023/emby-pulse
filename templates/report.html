@@ -2,6 +2,7 @@
 {% block title %}映迹工坊 - 旗舰版{% endblock %}
 {% block head %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<script src="https://cdn.bootcdn.net/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <style>
     /* ================= 全局设定 ================= */
     html, body { height: 100%; margin: 0; background: #f3f4f6; font-family: "Microsoft YaHei", -apple-system, sans-serif !important; overflow: hidden; }
@@ -9,76 +10,62 @@
     
     /* ================= 预览区 (Preview Area) ================= */
     .preview-area {
-        flex: 1;
-        overflow-y: auto;
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        padding: 40px 20px;
-        background-color: #e5e7eb;
-        -webkit-overflow-scrolling: touch;
-        /* Mobile: 给底部留出空间防止遮挡 */
-        padding-bottom: 100px;
+        flex: 1; overflow-y: auto; display: flex; justify-content: center; align-items: flex-start;
+        padding: 40px 20px; background-color: #e5e7eb; -webkit-overflow-scrolling: touch;
+        /* Mobile: 底部留出工具栏高度 */
+        padding-bottom: 120px; 
     }
 
-    /* ================= PC端控制台 (Desktop Control) ================= */
+    /* ================= PC端控制台 ================= */
     .control-panel {
-        width: 360px;
-        background: white;
-        padding: 20px;
-        border-left: 1px solid #ddd;
-        z-index: 50;
-        display: block; /* Desktop default */
-        box-shadow: -5px 0 15px rgba(0,0,0,0.05);
-        overflow-y: auto;
+        width: 360px; background: white; padding: 20px; border-left: 1px solid #ddd;
+        z-index: 50; display: block; box-shadow: -5px 0 15px rgba(0,0,0,0.05); overflow-y: auto;
     }
 
-    /* ================= 📱 移动端专属交互 (Mobile UI) ================= */
-    /* 1. 悬浮按钮 (FAB) */
-    .mobile-fab {
+    /* ================= 📱 V26 移动端交互：底部固定工具栏 ================= */
+    .mobile-toolbar {
         display: none; /* Desktop hidden */
-        position: fixed; bottom: 30px; right: 30px;
-        width: 60px; height: 60px; border-radius: 30px;
-        background: #111827; color: white;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-        align-items: center; justify-content: center;
-        font-size: 24px; z-index: 100; cursor: pointer;
-        transition: transform 0.2s;
+        position: fixed; bottom: 0; left: 0; width: 100%; height: 70px;
+        background: white; border-top: 1px solid #eee;
+        z-index: 500; /* 最高层级 */
+        align-items: center; justify-content: space-between;
+        padding: 0 15px; box-sizing: border-box;
+        box-shadow: 0 -5px 20px rgba(0,0,0,0.05);
     }
-    .mobile-fab:active { transform: scale(0.9); }
+    
+    /* 工具栏按钮 (原生 button，绝对可点) */
+    .toolbar-btn {
+        flex: 1; height: 44px; border-radius: 8px; border: none; 
+        font-weight: bold; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-config { background: #f3f4f6; color: #333; margin-right: 10px; border: 1px solid #ddd; }
+    .btn-save { background: #16a34a; color: white; flex: 1.5; box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3); }
 
-    /* 2. 底部抽屉 (Bottom Sheet) */
+    /* 底部抽屉 (Bottom Sheet) */
     .bottom-sheet {
-        display: none; /* Logic controlled */
-        position: fixed; bottom: 0; left: 0; width: 100%;
-        background: white;
-        border-radius: 20px 20px 0 0;
-        padding: 25px;
-        box-shadow: 0 -10px 40px rgba(0,0,0,0.2);
-        z-index: 200;
-        transform: translateY(100%);
-        transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+        display: none; position: fixed; bottom: 0; left: 0; width: 100%;
+        background: white; border-radius: 20px 20px 0 0; padding: 25px; padding-bottom: 40px;
+        box-shadow: 0 -10px 40px rgba(0,0,0,0.2); z-index: 200;
+        transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
         max-height: 80vh; overflow-y: auto;
     }
     .bottom-sheet.active { transform: translateY(0); }
 
-    /* 3. 遮罩层 (Overlay) */
     .overlay {
         position: fixed; inset: 0; background: rgba(0,0,0,0.5);
-        z-index: 150; opacity: 0; pointer-events: none;
-        transition: opacity 0.3s;
+        z-index: 150; opacity: 0; pointer-events: none; transition: opacity 0.3s;
     }
     .overlay.active { opacity: 1; pointer-events: auto; }
 
     /* 📱 Mobile Media Query */
     @media (max-width: 768px) {
         .app-container { flex-direction: column; }
-        .control-panel { display: none !important; } /* Hide PC panel */
-        .mobile-fab { display: flex; } /* Show FAB */
-        .preview-area { align-items: center; padding-top: 20px; } /* Center Poster */
+        .control-panel { display: none !important; } 
+        .mobile-toolbar { display: flex; } 
+        .preview-area { align-items: center; padding-top: 20px; }
     }
 
-    /* ================= 海报样式 (保持 V24 不变) ================= */
+    /* ================= 海报样式 (保持不变) ================= */
     :root { --theme-bg: #1a1a1a; --theme-card: rgba(255,255,255,0.08); --theme-text: white; --theme-highlight: #eab308; }
     .poster-canvas {
         width: 400px; min-height: 800px; height: auto;
@@ -92,7 +79,6 @@
     #poster-bg-gradient { position: absolute; inset: 0; z-index: 1; background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.5) 100%); }
     .p-content { position: relative; z-index: 10; padding: 40px 30px; display: flex; flex-direction: column; flex: 1; }
     
-    /* Components */
     .p-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
     .user-box { display: flex; align-items: center; gap: 12px; }
     .avatar { width: 54px; height: 54px; border-radius: 50%; background: var(--theme-card); display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 900; border: 2px solid rgba(255,255,255,0.3); background-size: cover; background-position: center; text-shadow: 0 2px 4px rgba(0,0,0,0.2); }
@@ -127,7 +113,6 @@
     .rank-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
     .rank-name { font-size: 12px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 4px; margin-bottom: -2px; }
     .rank-meta-row { font-size: 9px; opacity: 0.7; display: flex; gap: 8px; }
-
     .p-footer { margin-top: auto; padding-top: 30px; text-align: center; opacity: 0.4; font-size: 10px; letter-spacing: 2px; }
     .empty-box { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.4; min-height: 300px; text-align: center; }
 
@@ -138,8 +123,6 @@
     .btn.active { background: #111827; color: white; border-color: #111827; }
     .theme-dots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 15px; }
     .dot { height: 40px; border-radius: 8px; cursor: pointer; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; font-size: 10px; color: white; font-weight: bold; text-shadow: 0 1px 2px black; }
-    
-    .save-btn-large { width: 100%; padding: 14px; background: #16a34a; color: white; border: none; border-radius: 12px; font-weight: 900; font-size: 16px; margin-top: 10px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3); }
 </style>
 {% endblock %}
 
@@ -199,13 +182,21 @@
     </div>
 
     <div class="control-panel">
-        <div id="desktop-controls-container"></div> </div>
+        <div id="desktop-controls-container"></div>
+    </div>
 
-    <div class="mobile-fab" onclick="toggleSheet(true)"><i class="fa-solid fa-sliders"></i></div>
+    <div class="mobile-toolbar">
+        <button class="toolbar-btn btn-config" onclick="toggleSheet(true)">
+            <i class="fa-solid fa-sliders"></i> 参数配置
+        </button>
+        <button class="toolbar-btn btn-save" onclick="savePoster()" id="mobile-save-btn">
+            <i class="fa-solid fa-download"></i> 保存海报
+        </button>
+    </div>
 
     <div class="overlay" id="mobile-overlay" onclick="toggleSheet(false)"></div>
     <div class="bottom-sheet" id="mobile-sheet">
-        <div style="text-align: center; margin-bottom: 20px; font-weight: 900; font-size: 18px; color: #333;">配置海报</div>
+        <div style="text-align: center; margin-bottom: 20px; font-weight: 900; font-size: 18px; color: #333;">配置选项</div>
         <div id="mobile-controls-container">
             <label class="ctrl-label">选择用户</label>
             <select id="user-select" onchange="changeUser(this.value)" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 15px; background: #f9fafb;">
@@ -233,33 +224,34 @@
             </div>
             
             <button onclick="toggleCoverBg()" class="btn" style="width: 100%; margin-bottom: 15px; border: 1px dashed #999;">🖼️ 使用 Top1 封面背景</button>
-
-            <button onclick="savePoster()" id="save-btn" class="save-btn-large">
-                <i class="fa-solid fa-download mr-2"></i> 保存高清海报
-            </button>
         </div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+    // 全局错误哨兵
+    window.onerror = function(msg, url, line) {
+        alert("发生错误: " + msg + "\n请刷新页面重试。");
+        return false;
+    };
+</script>
 <script>
     let currentUserId = '';
     let currentUserName = 'User';
     let currentPeriod = 'month';
     const periodMap = {'all':'全量','year':'年度','month':'本月','week':'本周'};
 
-    // 移动端逻辑：根据屏幕宽度决定控件放在哪里
     function checkLayout() {
         const isMobile = window.innerWidth <= 768;
         const controlsHTML = document.getElementById('mobile-controls-container').innerHTML;
         const desktopContainer = document.getElementById('desktop-controls-container');
         
-        // 如果是桌面端，把抽屉里的控件复制到侧边栏（简单粗暴但有效）
+        // 桌面端加载侧边栏内容
         if (!isMobile && desktopContainer.innerHTML.trim() === '') {
-            desktopContainer.innerHTML = controlsHTML;
-            // 绑定事件需要重新处理吗？不需要，因为onclick是全局的
+            desktopContainer.innerHTML = controlsHTML + 
+            `<button onclick="savePoster()" id="pc-save-btn" style="width: 100%; padding: 12px; background: #16a34a; color: white; border: none; border-radius: 10px; font-weight: bold; font-size: 14px; margin-top: 20px;"><i class="fa-solid fa-download"></i> 保存海报</button>`;
         }
     }
     window.addEventListener('resize', () => { fitScale(); checkLayout(); });
@@ -279,7 +271,6 @@
 
     function fitScale() {
         const wrapper = document.querySelector('.preview-area');
-        // 留出边距
         const w = wrapper.clientWidth;
         const scale = Math.min((w - 40) / 400, 1);
         document.getElementById('scale-wrapper').style.transform = `scale(${scale})`;
@@ -370,7 +361,6 @@
     async function init() {
         const res = await fetch('/api/users');
         const json = await res.json();
-        // 填充所有 user-select (Mobile & Desktop if copied)
         const selects = document.querySelectorAll('#user-select');
         selects.forEach(sel => {
             sel.innerHTML = '';
@@ -387,13 +377,9 @@
 
     function changeUser(uid) {
         currentUserId = uid;
-        // 同步所有 select 状态
         document.querySelectorAll('#user-select').forEach(s => s.value = uid);
-        
-        // 获取当前选中的用户名 (从第一个select拿)
         const sel = document.querySelector('#user-select');
         currentUserName = sel.options[sel.selectedIndex].text;
-        
         document.getElementById('p-user').innerText = currentUserName;
         loadAvatar();
         loadData();
@@ -401,7 +387,6 @@
 
     function setPeriod(p, btn) {
         currentPeriod = p;
-        // 同步按钮状态
         document.querySelectorAll('.btn-group .btn').forEach(b => {
             if(b.innerText === btn.innerText) b.classList.add('active');
             else b.classList.remove('active');
@@ -473,7 +458,6 @@
                 </div>`;
             }
             listEl.innerHTML = html;
-            
             setTimeout(async () => {
                 const smPosters = listEl.querySelectorAll('.rank-poster-sm');
                 for(let el of smPosters) {
@@ -486,9 +470,16 @@
     }
 
     async function savePoster() {
-        const btns = document.querySelectorAll('#save-btn');
-        btns.forEach(b => b.innerText = '生成中...');
-        toggleSheet(false); // 收起抽屉，展示全屏海报
+        // 检查html2canvas是否加载
+        if(typeof html2canvas === 'undefined') {
+            alert("截图组件加载失败，请检查网络或刷新页面。");
+            return;
+        }
+
+        const btnMob = document.getElementById('mobile-save-btn');
+        const btnPc = document.getElementById('pc-save-btn');
+        if(btnMob) btnMob.innerText = '生成中...';
+        if(btnPc) btnPc.innerText = '生成中...';
 
         const wrapper = document.getElementById('scale-wrapper');
         const oldT = wrapper.style.transform;
@@ -512,10 +503,12 @@
             link.download = `EmbyReport_${currentUserId}.png`;
             link.href = canvas.toDataURL();
             link.click();
-        } catch(e) { alert('Err'); } 
-        finally { 
+        } catch(e) { 
+            alert('海报生成出错: ' + e); 
+        } finally { 
             wrapper.style.transform = oldT; 
-            btns.forEach(b => b.innerHTML = '<i class="fa-solid fa-download mr-2"></i> 保存高清海报');
+            if(btnMob) btnMob.innerHTML = '<i class="fa-solid fa-download"></i> 保存海报';
+            if(btnPc) btnPc.innerHTML = '<i class="fa-solid fa-download"></i> 保存海报';
         }
     }
 
