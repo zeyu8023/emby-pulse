@@ -1,216 +1,178 @@
 {% extends "layout.html" %}
-{% block title %}映迹工坊 - 小票版{% endblock %}
+{% block title %}映迹工坊 - 旗舰版{% endblock %}
 {% block head %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <style>
-    /* ================= 布局系统 (Mobile First) ================= */
-    html, body { height: 100%; margin: 0; background: #e5e5e5; font-family: 'Space Mono', monospace, sans-serif; overflow: hidden; }
-    
+    /* ================= 布局系统 ================= */
+    html, body { height: 100%; margin: 0; background: #e5e5e5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
     .app-container { display: flex; flex-direction: column; height: 100%; }
-
-    /* 预览区 (上部) */
+    
+    /* 预览区 */
     .preview-area {
-        flex: 1;
-        overflow-y: auto; /* 允许滚动 */
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        padding: 40px 20px;
-        background-color: #d4d4d8;
-        background-image: radial-gradient(#a1a1aa 1px, transparent 1px);
-        background-size: 20px 20px;
+        flex: 1; overflow-y: auto; display: flex; justify-content: center; align-items: flex-start;
+        padding: 40px 20px; background-color: #f3f4f6; -webkit-overflow-scrolling: touch;
     }
 
-    /* 控制台 (下部) */
+    /* 控制台 */
     .control-panel {
-        background: white;
-        padding: 20px;
-        box-shadow: 0 -5px 20px rgba(0,0,0,0.1);
-        z-index: 50;
-        flex-shrink: 0;
-        max-height: 40vh; /* 手机上不要占太高 */
-        overflow-y: auto;
+        background: white; padding: 20px; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); z-index: 50; flex-shrink: 0;
+        max-height: 40vh; overflow-y: auto;
     }
 
-    /* PC 端适配 */
+    /* PC 适配 */
     @media (min-width: 768px) {
         .app-container { flex-direction: row; }
-        .control-panel { width: 360px; height: 100%; max-height: 100%; border-right: 1px solid #ccc; box-shadow: none; }
+        .control-panel { width: 360px; height: 100%; max-height: 100%; border-right: 1px solid #ddd; }
         .preview-area { align-items: center; }
     }
 
-    /* ================= 🧾 小票本体样式 ================= */
-    .receipt {
-        width: 360px;
-        background: #fff;
+    /* ================= 🔥 海报本体 (流光卡片) 🔥 ================= */
+    .poster-canvas {
+        width: 400px;
+        min-height: 750px;
+        height: auto; /* 自适应 */
+        background: #1a1a1a;
         position: relative;
-        filter: drop-shadow(0 5px 15px rgba(0,0,0,0.15));
+        overflow: hidden;
+        box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+        color: white;
         display: flex; flex-direction: column;
-        margin-bottom: 50px; /* 底部留白方便查看 */
     }
 
-    /* 锯齿边缘 */
-    .receipt::before, .receipt::after {
-        content: ""; position: absolute; left: 0; width: 100%; height: 6px;
-        background-size: 12px 12px; background-repeat: repeat-x;
-    }
-    .receipt::before {
-        top: -6px;
-        background-image: linear-gradient(135deg, transparent 50%, #fff 50%), linear-gradient(45deg, #fff 50%, transparent 50%);
-    }
-    .receipt::after {
-        bottom: -6px;
-        background-image: linear-gradient(135deg, #fff 50%, transparent 50%), linear-gradient(45deg, transparent 50%, #fff 50%);
-    }
-
-    .r-content { padding: 30px 24px; color: #111; }
-
-    /* 文本通用 */
-    .r-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-    .r-label { font-size: 12px; font-weight: bold; text-transform: uppercase; }
-    .r-val { font-size: 14px; font-weight: bold; text-align: right; }
-    .r-val.big { font-size: 24px; letter-spacing: -1px; }
-    
-    .divider { border-bottom: 2px dashed #000; margin: 15px 0; opacity: 0.2; }
-    .divider-solid { border-bottom: 2px solid #000; margin: 20px 0; }
-
-    /* 头部 */
-    .r-header { text-align: center; margin-bottom: 20px; }
-    .r-title { font-size: 28px; font-weight: 900; margin: 0; letter-spacing: -1px; line-height: 1; }
-    .r-sub { font-size: 10px; opacity: 0.6; margin-top: 5px; text-transform: uppercase; }
-
-    /* Top 榜单 */
-    .top1-box { 
-        width: 100%; aspect-ratio: 16/9; background: #eee; margin: 10px 0; 
-        border: 2px solid #000; position: relative; 
+    /* 背景层 */
+    #poster-bg-img {
+        position: absolute; inset: 0; z-index: 0;
         background-size: cover; background-position: center;
+        filter: blur(40px) brightness(0.5); transform: scale(1.2);
     }
-    .top1-tag { 
-        position: absolute; top: 0; left: 0; background: #000; color: #fff; 
-        font-size: 10px; padding: 4px 8px; font-weight: bold; 
-    }
-    
-    .list-item { 
-        display: flex; justify-content: space-between; align-items: center; 
-        padding: 8px 0; border-bottom: 1px dotted #ccc; font-size: 11px; 
-    }
-    .item-name { 
-        flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
-        font-weight: bold; padding-right: 10px; 
+    #poster-bg-gradient {
+        position: absolute; inset: 0; z-index: 1;
+        background: linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.9));
     }
 
-    /* 底部 */
-    .barcode { 
-        height: 40px; width: 100%; margin-top: 20px; 
-        background: repeating-linear-gradient(to right, #000 0, #000 2px, transparent 2px, transparent 4px, #000 4px, #000 5px); 
-    }
-    .footer-msg { font-size: 10px; text-align: center; margin-top: 10px; font-style: italic; }
+    /* 内容层 */
+    .p-content { position: relative; z-index: 10; padding: 40px 30px; display: flex; flex-direction: column; flex: 1; }
 
-    /* ================= 交互按钮 ================= */
-    .btn-group { display: flex; gap: 8px; margin-bottom: 12px; }
-    .btn { 
-        flex: 1; padding: 10px; border: 2px solid #000; background: #fff; 
-        font-family: inherit; font-size: 12px; font-weight: bold; cursor: pointer; 
-    }
-    .btn.active { background: #000; color: #fff; }
-    .btn-save { background: #16a34a; border-color: #16a34a; color: white; width: 100%; }
+    /* Header */
+    .p-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+    .user-box { display: flex; align-items: center; gap: 12px; }
+    .avatar { width: 56px; height: 56px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 900; border: 2px solid rgba(255,255,255,0.3); }
+    .user-info h1 { font-size: 26px; font-weight: 900; margin: 0; line-height: 1.2; padding-top: 4px; }
+    .user-info p { font-size: 11px; opacity: 0.6; text-transform: uppercase; letter-spacing: 1px; margin: 0; }
+    .server-pill { background: rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 20px; font-size: 10px; border: 1px solid rgba(255,255,255,0.1); text-align: center; }
+    .server-pill span { display: block; font-weight: 900; font-size: 14px; color: #4ade80; }
+
+    /* Stats */
+    .stats-row { display: flex; gap: 15px; margin-bottom: 30px; }
+    .stat-card { flex: 1; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); text-align: center; }
+    .stat-val { font-size: 32px; font-weight: 900; line-height: 1; }
+    .stat-label { font-size: 10px; opacity: 0.5; margin-top: 5px; text-transform: uppercase; font-weight: bold; }
+
+    /* Top 1 */
+    .top1-wrapper { width: 100%; aspect-ratio: 16/9; position: relative; border-radius: 16px; overflow: hidden; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); }
+    .top1-img { width: 100%; height: 100%; background-size: cover; background-position: center; }
+    .top1-mask { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); }
+    .top1-info { position: absolute; bottom: 15px; left: 15px; right: 15px; }
+    .top1-badge { display: inline-block; background: #eab308; color: black; font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 4px; margin-bottom: 5px; }
+    .top1-title { font-size: 20px; font-weight: bold; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* List */
+    .rank-list { display: flex; flex-direction: column; gap: 10px; }
+    .rank-row { display: flex; align-items: center; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 10px; }
+    .rank-idx { font-size: 14px; font-weight: 900; color: rgba(255,255,255,0.3); width: 25px; }
+    .rank-name { flex: 1; font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
+    .rank-count { font-size: 11px; opacity: 0.6; }
+
+    /* Footer */
+    .p-footer { margin-top: auto; padding-top: 30px; text-align: center; opacity: 0.4; font-size: 10px; letter-spacing: 2px; }
+
+    /* Empty State */
+    .empty-box { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.3; min-height: 300px; }
+
+    /* Controls */
+    .btn-group { display: flex; gap: 8px; margin-bottom: 15px; }
+    .btn { flex: 1; padding: 10px; border: 1px solid #ddd; background: #fff; font-weight: bold; border-radius: 8px; font-size: 12px; cursor: pointer; }
+    .btn.active { background: #111827; color: white; border-color: #111827; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="app-container">
-    
     <div class="preview-area">
-        <div id="scale-wrapper"> <div id="capture-target" class="receipt">
-                <div class="r-content">
-                    
-                    <div class="r-header">
-                        <h1 class="r-title">EMBY PULSE</h1>
-                        <div class="r-sub">Viewing Report / <span id="p-date">2026-01-01</span></div>
-                    </div>
-
-                    <div class="divider-solid"></div>
-
-                    <div class="r-row">
-                        <span class="r-label">USER</span>
-                        <span class="r-val" id="p-user">LOADING...</span>
-                    </div>
-                    <div class="r-row">
-                        <span class="r-label">PERIOD</span>
-                        <span class="r-val" id="p-period">ALL TIME</span>
-                    </div>
-
-                    <div class="divider"></div>
-
-                    <div class="r-row">
-                        <span class="r-label">TOTAL HOURS</span>
-                        <span class="r-val big" id="p-hours">0</span>
-                    </div>
-                    <div class="r-row">
-                        <span class="r-label">TOTAL PLAYS</span>
-                        <span class="r-val big" id="p-plays">0</span>
-                    </div>
-                    <div class="r-row" style="opacity: 0.5;">
-                        <span class="r-label">SERVER TOTAL</span>
-                        <span class="r-val" id="p-server">0</span>
-                    </div>
-
-                    <div class="divider-solid"></div>
-
-                    <div class="r-label" style="margin-bottom: 10px;">TOP CONSUMPTION</div>
-                    
-                    <div id="top1-area" style="display: none;">
-                        <div class="top1-box" id="top1-img">
-                            <div class="top1-tag">#1 MOST WATCHED</div>
+        <div id="scale-wrapper">
+            <div id="capture-target" class="poster-canvas">
+                <div id="poster-bg-img"></div>
+                <div id="poster-bg-gradient"></div>
+                
+                <div class="p-content">
+                    <div class="p-header">
+                        <div class="user-box">
+                            <div class="avatar" id="p-avatar">U</div>
+                            <div class="user-info">
+                                <h1 id="p-user">User</h1>
+                                <p id="p-period">2026 年度报告</p>
+                            </div>
                         </div>
-                        <div class="r-row">
-                            <span class="r-val" id="top1-name" style="text-align: left;">-</span>
-                            <span class="r-label" id="top1-count">0</span>
+                        <div class="server-pill">
+                            <span id="p-server">0</span>
+                            全服总播
                         </div>
                     </div>
 
-                    <div id="list-container" style="margin-top: 15px;">
-                        <div style="text-align: center; padding: 20px; font-size: 12px; opacity: 0.5;">
-                            [ NO DATA ]
+                    <div class="stats-row">
+                        <div class="stat-card">
+                            <div class="stat-val" id="p-hours">0</div>
+                            <div class="stat-label">专注时长 (H)</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-val" id="p-plays">0</div>
+                            <div class="stat-label">播放次数</div>
                         </div>
                     </div>
 
-                    <div class="divider"></div>
+                    <div id="content-area">
+                        <div id="top1-wrapper" class="top1-wrapper" style="display:none;">
+                            <div id="top1-img" class="top1-img"></div>
+                            <div class="top1-mask"></div>
+                            <div class="top1-info">
+                                <div class="top1-badge">TOP 1 年度最爱</div>
+                                <div class="top1-title" id="top1-title">-</div>
+                                <div style="font-size: 11px; opacity: 0.7; margin-top: 2px;" id="top1-count">0 次播放</div>
+                            </div>
+                        </div>
 
-                    <div class="r-row">
-                        <span class="r-label">TOTAL</span>
-                        <span class="r-val">PRICELESS</span>
+                        <div class="rank-list" id="rank-list"></div>
                     </div>
-                    
-                    <div class="barcode"></div>
-                    <div class="footer-msg" id="p-msg">Life is short, watch more.</div>
-                    <div style="text-align: center; font-size: 8px; margin-top: 5px; opacity: 0.5;">Generated by EmbyPulse</div>
 
+                    <div id="empty-area" class="empty-box" style="display:none;">
+                        <i class="fa-solid fa-moon" style="font-size: 40px; margin-bottom: 10px;"></i>
+                        <p>该时段暂无记录</p>
+                    </div>
+
+                    <div class="p-footer">GENERATED BY EMBY PULSE</div>
                 </div>
             </div>
         </div>
     </div>
 
     <div class="control-panel">
-        <div style="font-size: 10px; font-weight: bold; margin-bottom: 5px;">USER SELECT</div>
-        <select id="user-select" onchange="changeUser(this.value)" style="width: 100%; padding: 8px; border: 2px solid #000; margin-bottom: 15px; font-family: inherit;">
+        <label style="font-size: 12px; font-weight: bold; color: #666;">用户</label>
+        <select id="user-select" onchange="changeUser(this.value)" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 15px; margin-top: 5px;">
             <option>Loading...</option>
         </select>
 
-        <div style="font-size: 10px; font-weight: bold; margin-bottom: 5px;">TIME RANGE</div>
-        <div class="btn-group">
-            <button class="btn active" onclick="setPeriod('all', this)">ALL</button>
-            <button class="btn" onclick="setPeriod('year', this)">YEAR</button>
-            <button class="btn" onclick="setPeriod('month', this)">MONTH</button>
-            <button class="btn" onclick="setPeriod('week', this)">WEEK</button>
+        <label style="font-size: 12px; font-weight: bold; color: #666;">时间</label>
+        <div class="btn-group" style="margin-top: 5px;">
+            <button class="btn" onclick="setPeriod('all', this)">全量</button>
+            <button class="btn" onclick="setPeriod('year', this)">年度</button>
+            <button class="btn active" onclick="setPeriod('month', this)">本月</button>
+            <button class="btn" onclick="setPeriod('week', this)">本周</button>
         </div>
 
-        <button class="btn btn-save" onclick="downloadImage()">
-            DOWNLOAD RECEIPT
+        <button onclick="savePoster()" style="width: 100%; padding: 12px; background: #16a34a; color: white; border: none; border-radius: 10px; font-weight: bold; font-size: 14px; margin-top: 10px;">
+            保存海报
         </button>
     </div>
-
 </div>
 {% endblock %}
 
@@ -218,14 +180,11 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
     let currentUserId = '';
-    let currentPeriod = 'all';
+    let currentPeriod = 'month';
 
-    // 缩放适配
     function fitScale() {
         const wrapper = document.querySelector('.preview-area');
-        const card = document.getElementById('capture-target');
-        // 留出 40px 边距
-        const scale = Math.min((wrapper.clientWidth - 40) / 360, 1);
+        const scale = Math.min((wrapper.clientWidth - 40) / 400, 1);
         document.getElementById('scale-wrapper').style.transform = `scale(${scale})`;
         document.getElementById('scale-wrapper').style.transformOrigin = 'top center';
     }
@@ -233,16 +192,12 @@
     setTimeout(fitScale, 100);
 
     async function init() {
-        document.getElementById('p-date').innerText = new Date().toLocaleDateString();
-        
-        // 获取用户
         const res = await fetch('/api/users');
         const json = await res.json();
         const sel = document.getElementById('user-select');
         sel.innerHTML = '';
-        
-        if (json.data && json.data.length > 0) {
-            json.data.forEach(u => {
+        if(json.data && json.data.length > 0) {
+            json.data.forEach((u, index) => {
                 const opt = document.createElement('option');
                 opt.value = u.UserId;
                 opt.innerText = u.UserName;
@@ -255,94 +210,85 @@
     function changeUser(uid) {
         currentUserId = uid;
         const sel = document.getElementById('user-select');
-        const name = sel.options[sel.selectedIndex].text;
-        document.getElementById('p-user').innerText = name;
+        document.getElementById('p-user').innerText = sel.options[sel.selectedIndex].text;
+        document.getElementById('p-avatar').innerText = sel.options[sel.selectedIndex].text[0].toUpperCase();
         loadData();
     }
 
     function setPeriod(p, btn) {
         currentPeriod = p;
-        document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        document.getElementById('p-period').innerText = p.toUpperCase();
+        const map = {'all':'全量报告','year':'年度报告','month':'本月报告','week':'本周报告'};
+        document.getElementById('p-period').innerText = map[p];
         loadData();
     }
 
     async function loadData() {
         if(!currentUserId) return;
-        
         const res = await fetch(`/api/stats/poster_data?user_id=${currentUserId}&period=${currentPeriod}`);
         const json = await res.json();
         const data = json.data;
 
-        // 填充数据
         document.getElementById('p-plays').innerText = data.plays;
         document.getElementById('p-hours').innerText = data.hours;
         document.getElementById('p-server').innerText = data.server_plays;
 
-        const list = data.top_list || [];
-        const top1Area = document.getElementById('top1-area');
-        const listContainer = document.getElementById('list-container');
+        const hasData = data.plays > 0;
+        document.getElementById('content-area').style.display = hasData ? 'block' : 'none';
+        document.getElementById('empty-area').style.display = hasData ? 'none' : 'flex';
 
-        // Top 1
-        if (list.length > 0) {
-            top1Area.style.display = 'block';
-            document.getElementById('top1-name').innerText = list[0].ItemName;
-            document.getElementById('top1-count').innerText = `${list[0].Count} X`;
-            // 封面
-            const imgUrl = `/api/proxy/image/${list[0].ItemId}/backdrop`;
-            document.getElementById('top1-img').style.backgroundImage = `url('${imgUrl}')`;
-        } else {
-            top1Area.style.display = 'none';
-        }
+        if(hasData) {
+            const list = data.top_list;
+            // Top 1
+            if(list[0]) {
+                document.getElementById('top1-wrapper').style.display = 'block';
+                document.getElementById('top1-title').innerText = list[0].ItemName;
+                document.getElementById('top1-count').innerText = `${list[0].P} 次播放`;
+                const img = new Image();
+                img.src = `/api/proxy/image/${list[0].ItemId}/backdrop`;
+                img.onload = () => { 
+                    document.getElementById('top1-img').style.backgroundImage = `url('${img.src}')`; 
+                    document.getElementById('poster-bg-img').style.backgroundImage = `url('${img.src}')`;
+                };
+                img.onerror = () => {
+                    document.getElementById('top1-img').style.backgroundImage = `url('https://via.placeholder.com/400x200')`;
+                }
+            } else {
+                document.getElementById('top1-wrapper').style.display = 'none';
+            }
 
-        // List
-        if (list.length <= 1) {
-            listContainer.innerHTML = '<div style="text-align: center; padding: 20px; font-size: 12px; opacity: 0.5;">[ NO MORE DATA ]</div>';
-        } else {
+            // List
+            const listEl = document.getElementById('rank-list');
             let html = '';
-            for (let i = 1; i < list.length; i++) {
+            const max = Math.min(list.length, 10);
+            for(let i=1; i<max; i++) {
                 html += `
-                <div class="list-item">
-                    <span style="font-weight:bold; margin-right:5px;">${i+1}.</span>
-                    <span class="item-name">${list[i].ItemName}</span>
-                    <span style="font-family:monospace;">${list[i].Count}</span>
+                <div class="rank-row">
+                    <div class="rank-idx">${i+1}</div>
+                    <div class="rank-name">${list[i].ItemName}</div>
+                    <div class="rank-count">${list[i].P}次</div>
                 </div>`;
             }
-            listContainer.innerHTML = html;
-        }
-        
-        // 如果完全没数据
-        if (data.plays === 0) {
-            listContainer.innerHTML = '<div style="text-align: center; padding: 30px; font-weight: bold;">[ NO PLAYBACK HISTORY ]</div>';
+            listEl.innerHTML = html;
         }
     }
 
-    async function downloadImage() {
+    async function savePoster() {
         const node = document.getElementById('capture-target');
+        const wrapper = document.getElementById('scale-wrapper');
+        const oldT = wrapper.style.transform;
+        wrapper.style.transform = 'none';
+        await new Promise(r => setTimeout(r, 100));
+        
         try {
-            // 截图前移除缩放，保证清晰度
-            const wrapper = document.getElementById('scale-wrapper');
-            const oldTransform = wrapper.style.transform;
-            wrapper.style.transform = 'none';
-            
-            await new Promise(r => setTimeout(r, 50));
-
-            const canvas = await html2canvas(node, {
-                scale: 2, 
-                backgroundColor: null 
-            });
-            
+            const canvas = await html2canvas(node, { scale: 2, useCORS: true, backgroundColor: '#1a1a1a' });
             const link = document.createElement('a');
-            link.download = `Emby_Receipt_${currentUserId}.png`;
+            link.download = 'EmbyPulse_Report.png';
             link.href = canvas.toDataURL();
             link.click();
-            
-            // 恢复缩放
-            wrapper.style.transform = oldTransform;
-        } catch(e) {
-            alert("Error: " + e);
-        }
+        } catch(e) { alert('Err'); }
+        finally { wrapper.style.transform = oldT; }
     }
 
     init();
