@@ -22,7 +22,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
 
 FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
-print(f"--- EmbyPulse V35 (Full Features + Auth) ---")
+print(f"--- EmbyPulse V37 (Full Integrity Check) ---")
 print(f"DB Path: {DB_PATH}")
 
 app = FastAPI()
@@ -70,8 +70,8 @@ def get_user_map():
 def get_current_user(request: Request):
     user = request.session.get("user")
     if not user:
-        if request.url.path.startswith("/api/auth"): return None # 登录接口放行
-        if request.url.path.startswith("/api"):
+        # API请求返回401，页面请求返回None让路由处理跳转
+        if request.url.path.startswith("/api") and not request.url.path.startswith("/api/auth"):
             raise HTTPException(status_code=401, detail="Not authenticated")
         return None
     return user
@@ -84,23 +84,27 @@ async def page_login(request: Request):
 
 @app.get("/")
 async def page_dashboard(request: Request): 
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("index.html", {"request": request, "active_page": "dashboard"})
+    user = request.session.get("user")
+    if not user: return RedirectResponse("/login")
+    return templates.TemplateResponse("index.html", {"request": request, "user": user, "active_page": "dashboard"})
 
 @app.get("/report")
 async def page_report(request: Request): 
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("report.html", {"request": request, "active_page": "report"})
+    user = request.session.get("user")
+    if not user: return RedirectResponse("/login")
+    return templates.TemplateResponse("report.html", {"request": request, "user": user, "active_page": "report"})
 
 @app.get("/content")
 async def page_content(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("content.html", {"request": request, "active_page": "content"})
+    user = request.session.get("user")
+    if not user: return RedirectResponse("/login")
+    return templates.TemplateResponse("content.html", {"request": request, "user": user, "active_page": "content"})
 
 @app.get("/details")
 async def page_details(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("details.html", {"request": request, "active_page": "details"})
+    user = request.session.get("user")
+    if not user: return RedirectResponse("/login")
+    return templates.TemplateResponse("details.html", {"request": request, "user": user, "active_page": "details"})
 
 # ================= 🔐 认证 API =================
 @app.post("/api/auth/login")
@@ -148,15 +152,13 @@ async def api_tmdb_backdrop():
     except: pass
     return {"url": random.choice(fallback)}
 
-# ================= 📊 核心业务 API (权限增强版) =================
+# ================= 📊 核心业务 API (所有功能回归) =================
 
 @app.get("/api/users")
 async def api_get_users(current_user: dict = Depends(get_current_user)):
     try:
-        # 普通用户只能看自己
         if not current_user['is_admin']:
             return {"status": "success", "data": [{"UserId": current_user['id'], "UserName": current_user['name']}]}
-
         results = query_db("SELECT DISTINCT UserId FROM PlaybackActivity")
         if not results: return {"status": "success", "data": []}
         user_map = get_user_map()
@@ -170,10 +172,9 @@ async def api_get_users(current_user: dict = Depends(get_current_user)):
         return {"status": "success", "data": data}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-# 🔥 补回：仪表盘统计
 @app.get("/api/stats/dashboard")
 async def api_dashboard(user_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    if not current_user['is_admin']: user_id = current_user['id'] # 强制权限
+    if not current_user['is_admin']: user_id = current_user['id']
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all':
@@ -189,7 +190,6 @@ async def api_dashboard(user_id: Optional[str] = None, current_user: dict = Depe
         }}
     except: return {"status": "error", "data": {"total_plays":0}}
 
-# 🔥 补回：最近播放
 @app.get("/api/stats/recent")
 async def api_recent_activity(user_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     if not current_user['is_admin']: user_id = current_user['id']
@@ -217,9 +217,9 @@ async def api_recent_activity(user_id: Optional[str] = None, current_user: dict 
         return {"status": "success", "data": final_data}
     except Exception as e: return {"status": "error", "data": []}
 
-# 🔥 补回：实时会话 (这个需要 Emby Admin 权限，暂不限制前端调用，后端 Key 是 admin 的就行)
 @app.get("/api/live")
 async def api_live_sessions(current_user: dict = Depends(get_current_user)):
+    # 实时会话通常需要管理员权限，或者只显示自己的，这里为了简单，如果有 KEY 就显示
     if not EMBY_API_KEY: return {"status": "error"}
     try:
         res = requests.get(f"{EMBY_HOST}/emby/Sessions?api_key={EMBY_API_KEY}", timeout=2)
@@ -228,7 +228,6 @@ async def api_live_sessions(current_user: dict = Depends(get_current_user)):
     except: pass
     return {"status": "success", "data": []}
 
-# 🔥 补回：Top 电影/剧集
 @app.get("/api/stats/top_movies")
 async def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by: str = 'count', current_user: dict = Depends(get_current_user)):
     if not current_user['is_admin']: user_id = current_user['id']
@@ -239,7 +238,6 @@ async def api_top_movies(user_id: Optional[str] = None, category: str = 'all', s
             params.append(user_id)
         if category == 'Movie': where += " AND ItemType = 'Movie'"
         elif category == 'Episode': where += " AND ItemType = 'Episode'"
-        
         sql = f"SELECT ItemName, ItemId, ItemType, PlayDuration FROM PlaybackActivity {where}"
         rows = query_db(sql, params)
         aggregated = {}
@@ -256,7 +254,6 @@ async def api_top_movies(user_id: Optional[str] = None, category: str = 'all', s
         return {"status": "success", "data": result_list[:50]}
     except: return {"status": "error", "data": []}
 
-# 🔥 补回：用户详情
 @app.get("/api/stats/user_details")
 async def api_user_details(user_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     if not current_user['is_admin']: user_id = current_user['id']
@@ -281,7 +278,6 @@ async def api_user_details(user_id: Optional[str] = None, current_user: dict = D
         return {"status": "success", "data": {"hourly": hourly_data, "devices": [dict(r) for r in device_res] if device_res else [], "logs": logs_data}}
     except: return {"status": "error", "data": {"hourly": {}, "devices": [], "logs": []}}
 
-# 🔥 补回：图表数据
 @app.get("/api/stats/chart")
 async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month', current_user: dict = Depends(get_current_user)):
     if not current_user['is_admin']: user_id = current_user['id']
@@ -307,7 +303,6 @@ async def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'month
         return {"status": "success", "data": data}
     except: return {"status": "error", "data": {}}
 
-# ================= 海报生成 (保留 V34 的权限修改) =================
 @app.get("/api/stats/poster_data")
 async def api_poster_data(user_id: Optional[str] = None, period: str = 'all', current_user: dict = Depends(get_current_user)):
     if not current_user['is_admin']: user_id = current_user['id']
@@ -347,13 +342,9 @@ async def api_poster_data(user_id: Optional[str] = None, period: str = 'all', cu
         top_list.sort(key=lambda x: x['Count'], reverse=True)
         top_list = top_list[:10]
         
-        return {"status": "success", "data": {
-            "plays": total_plays, "hours": round(total_duration / 3600),
-            "server_plays": server_plays, "top_list": top_list
-        }}
+        return {"status": "success", "data": {"plays": total_plays, "hours": round(total_duration / 3600), "server_plays": server_plays, "top_list": top_list}}
     except Exception as e: return {"status": "error", "message": str(e), "data": {"plays": 0, "hours": 0, "server_plays": 0, "top_list": []}}
 
-# ================= 辅助 API =================
 @app.get("/api/stats/top_users_list")
 async def api_top_users_list():
     try:
@@ -362,9 +353,7 @@ async def api_top_users_list():
         user_map = get_user_map()
         data = []
         for row in res:
-            u = dict(row)
-            u['UserName'] = user_map.get(u['UserId'], f"User {str(u['UserId'])[:5]}")
-            data.append(u)
+            u = dict(row); u['UserName'] = user_map.get(u['UserId'], f"User {str(u['UserId'])[:5]}"); data.append(u)
         return {"status": "success", "data": data}
     except: return {"status": "success", "data": []}
 

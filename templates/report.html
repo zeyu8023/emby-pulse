@@ -9,7 +9,7 @@
     html, body { height: 100%; margin: 0; background: #f3f4f6; font-family: "Microsoft YaHei", -apple-system, sans-serif !important; overflow: hidden; }
     .app-container { display: flex; height: 100%; }
     
-    /* ================= 预览区 (Preview Area) ================= */
+    /* ================= 预览区 ================= */
     .preview-area {
         flex: 1; overflow-y: auto; display: flex; justify-content: center; align-items: flex-start;
         padding: 40px 20px; 
@@ -66,7 +66,6 @@
         width: 400px; 
         height: fit-content; 
         min-height: auto;
-        /* 🔥 V33: 极致紧凑，底部只留 20px */
         padding-bottom: 20px; 
         
         background: var(--theme-bg); color: var(--theme-text);
@@ -83,7 +82,6 @@
     .p-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
     .user-box { display: flex; align-items: center; gap: 12px; }
     
-    /* 🔥 V32: 头像样式 - 矢量图标适配 */
     .avatar { 
         width: 54px; height: 54px; border-radius: 50%; 
         background-color: #e5e7eb; 
@@ -128,7 +126,6 @@
     .rank-name { font-size: 12px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 4px; margin-bottom: -2px; }
     .rank-meta-row { font-size: 9px; opacity: 0.7; display: flex; gap: 8px; }
     
-    /* 🔥 V33: Footer 极限上移，减少留白 */
     .p-footer { 
         margin-top: 15px; 
         text-align: center; opacity: 0.4; font-size: 10px; letter-spacing: 2px; 
@@ -375,7 +372,6 @@
         avatarEl.style.backgroundImage = 'none';
         avatarEl.innerText = '';
         
-        // 🔥 V33: 全服用户专属头像
         if (currentUserId === 'all') {
             avatarEl.style.background = 'linear-gradient(135deg, #1a1a1a, #333)';
             avatarEl.innerHTML = '<i class="fa-solid fa-server"></i>';
@@ -401,7 +397,7 @@
     }
 
     async function init() {
-        // 🔥 V34: 认证检查
+        // 🔥 V34: 认证逻辑
         const meRes = await fetch('/api/auth/me');
         if (!meRes.ok) { window.location.href = '/login'; return; }
         const meJson = await meRes.json();
@@ -420,7 +416,6 @@
 
         selects.forEach(sel => {
             sel.innerHTML = '';
-            
             // 🔥 V33: 管理员显示全服选项
             if (me.is_admin) {
                 const optAll = document.createElement('option');
