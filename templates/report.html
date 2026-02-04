@@ -3,47 +3,76 @@
 {% block head %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
-    /* 保持 V15 的 CSS 样式，确保流光卡片效果 */
+    /* ================= 布局系统 ================= */
     html, body { height: 100%; margin: 0; background: #e5e5e5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
     .app-container { display: flex; flex-direction: column; height: 100%; }
     .preview-area { flex: 1; overflow-y: auto; display: flex; justify-content: center; align-items: flex-start; padding: 40px 20px; background-color: #f3f4f6; -webkit-overflow-scrolling: touch; }
     .control-panel { background: white; padding: 20px; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); z-index: 50; flex-shrink: 0; max-height: 40vh; overflow-y: auto; }
     @media (min-width: 768px) { .app-container { flex-direction: row; } .control-panel { width: 360px; height: 100%; max-height: 100%; border-right: 1px solid #ddd; } .preview-area { align-items: center; } }
     
-    .poster-canvas { width: 400px; min-height: 750px; height: auto; background: #1a1a1a; position: relative; overflow: hidden; box-shadow: 0 30px 60px rgba(0,0,0,0.5); color: white; display: flex; flex-direction: column; }
-    #poster-bg-img { position: absolute; inset: 0; z-index: 0; background-size: cover; background-position: center; filter: blur(40px) brightness(0.5); transform: scale(1.2); }
-    #poster-bg-gradient { position: absolute; inset: 0; z-index: 1; background: linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.9)); }
+    /* ================= 海报本体 (卡片风) ================= */
+    .poster-canvas {
+        width: 400px;
+        min-height: 750px;
+        height: auto;
+        background: #1a1a1a;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+        color: white;
+        display: flex; flex-direction: column;
+        /* 防止字体偏移 */
+        line-height: 1.5;
+    }
+
+    /* 动态背景 (Base64) */
+    #poster-bg-img {
+        position: absolute; inset: 0; z-index: 0;
+        background-size: cover; background-position: center;
+        filter: blur(40px) brightness(0.6); transform: scale(1.2);
+    }
+    #poster-bg-gradient {
+        position: absolute; inset: 0; z-index: 1;
+        background: linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.9) 100%);
+    }
+
     .p-content { position: relative; z-index: 10; padding: 40px 30px; display: flex; flex-direction: column; flex: 1; }
-    
+
+    /* Header */
     .p-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
     .user-box { display: flex; align-items: center; gap: 12px; }
     .avatar { width: 56px; height: 56px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 900; border: 2px solid rgba(255,255,255,0.3); }
-    .user-info h1 { font-size: 26px; font-weight: 900; margin: 0; line-height: 1.2; padding-top: 4px; }
-    .user-info p { font-size: 11px; opacity: 0.6; text-transform: uppercase; letter-spacing: 1px; margin: 0; }
-    .server-pill { background: rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 20px; font-size: 10px; border: 1px solid rgba(255,255,255,0.1); text-align: center; }
+    .user-info h1 { font-size: 26px; font-weight: 900; margin: 0; padding-top: 4px; }
+    .user-info p { font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px; margin: 0; margin-top: 2px; }
+    .server-pill { background: rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 20px; font-size: 10px; border: 1px solid rgba(255,255,255,0.1); text-align: center; backdrop-filter: blur(5px); }
     .server-pill span { display: block; font-weight: 900; font-size: 14px; color: #4ade80; }
-    
+
+    /* Stats */
     .stats-row { display: flex; gap: 15px; margin-bottom: 30px; }
-    .stat-card { flex: 1; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); text-align: center; }
-    .stat-val { font-size: 32px; font-weight: 900; line-height: 1; }
-    .stat-label { font-size: 10px; opacity: 0.5; margin-top: 5px; text-transform: uppercase; font-weight: bold; }
-    
+    .stat-card { flex: 1; background: rgba(255,255,255,0.08); padding: 15px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); text-align: center; backdrop-filter: blur(10px); }
+    .stat-val { font-size: 32px; font-weight: 900; line-height: 1; margin-bottom: 4px; }
+    .stat-label { font-size: 10px; opacity: 0.6; text-transform: uppercase; font-weight: bold; }
+
+    /* Top 1 (Base64 BG) */
     .top1-wrapper { width: 100%; aspect-ratio: 16/9; position: relative; border-radius: 16px; overflow: hidden; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); }
     .top1-img { width: 100%; height: 100%; background-size: cover; background-position: center; }
     .top1-mask { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); }
     .top1-info { position: absolute; bottom: 15px; left: 15px; right: 15px; }
-    .top1-badge { display: inline-block; background: #eab308; color: black; font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 4px; margin-bottom: 5px; }
-    .top1-title { font-size: 20px; font-weight: bold; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    
-    .rank-list { display: flex; flex-direction: column; gap: 10px; }
-    .rank-row { display: flex; align-items: center; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 10px; }
-    .rank-idx { font-size: 14px; font-weight: 900; color: rgba(255,255,255,0.3); width: 25px; }
+    .top1-badge { display: inline-block; background: #eab308; color: black; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 4px; margin-bottom: 6px; }
+    .top1-title { font-size: 22px; font-weight: bold; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 2px; }
+
+    /* Rank List */
+    .rank-list { display: flex; flex-direction: column; gap: 8px; }
+    .rank-row { display: flex; align-items: center; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 12px; backdrop-filter: blur(5px); }
+    .rank-idx { font-size: 14px; font-weight: 900; color: rgba(255,255,255,0.4); width: 30px; }
     .rank-name { flex: 1; font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
-    .rank-count { font-size: 11px; opacity: 0.6; }
-    
+    .rank-data { text-align: right; font-size: 10px; opacity: 0.7; }
+    .rank-data span { display: block; }
+
+    /* Footer & Empty */
     .p-footer { margin-top: auto; padding-top: 30px; text-align: center; opacity: 0.4; font-size: 10px; letter-spacing: 2px; }
-    .empty-box { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.3; min-height: 300px; }
-    .btn-group { display: flex; gap: 8px; margin-bottom: 15px; }
+    .empty-box { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.4; min-height: 300px; text-align: center; }
+    .btn-group { display: flex; gap: 8px; margin-bottom: 15px; margin-top: 5px; }
     .btn { flex: 1; padding: 10px; border: 1px solid #ddd; background: #fff; font-weight: bold; border-radius: 8px; font-size: 12px; cursor: pointer; }
     .btn.active { background: #111827; color: white; border-color: #111827; }
 </style>
@@ -63,7 +92,7 @@
                             <div class="avatar" id="p-avatar">U</div>
                             <div class="user-info">
                                 <h1 id="p-user">User</h1>
-                                <p id="p-period">2026 年度报告</p>
+                                <p id="p-period">全量观影报告</p>
                             </div>
                         </div>
                         <div class="server-pill">
@@ -88,16 +117,16 @@
                             <div id="top1-img" class="top1-img"></div>
                             <div class="top1-mask"></div>
                             <div class="top1-info">
-                                <div class="top1-badge">TOP 1 年度最爱</div>
+                                <div class="top1-badge" id="top1-badge">TOP 1 年度最爱</div>
                                 <div class="top1-title" id="top1-title">-</div>
-                                <div style="font-size: 11px; opacity: 0.7; margin-top: 2px;" id="top1-count">0 次播放</div>
+                                <div style="font-size: 11px; opacity: 0.8; margin-top: 4px;" id="top1-count">0 次播放</div>
                             </div>
                         </div>
                         <div class="rank-list" id="rank-list"></div>
                     </div>
 
                     <div id="empty-area" class="empty-box" style="display:none;">
-                        <i class="fa-solid fa-moon" style="font-size: 40px; margin-bottom: 10px;"></i>
+                        <i class="fa-solid fa-ghost" style="font-size: 40px; margin-bottom: 10px;"></i>
                         <p>该时段暂无记录</p>
                     </div>
 
@@ -114,14 +143,14 @@
         </select>
 
         <label style="font-size: 12px; font-weight: bold; color: #666;">时间</label>
-        <div class="btn-group" style="margin-top: 5px;">
+        <div class="btn-group">
             <button class="btn" onclick="setPeriod('all', this)">全量</button>
             <button class="btn" onclick="setPeriod('year', this)">年度</button>
             <button class="btn active" onclick="setPeriod('month', this)">本月</button>
             <button class="btn" onclick="setPeriod('week', this)">本周</button>
         </div>
 
-        <button onclick="savePoster()" style="width: 100%; padding: 12px; background: #16a34a; color: white; border: none; border-radius: 10px; font-weight: bold; font-size: 14px; margin-top: 10px;">
+        <button onclick="savePoster()" id="save-btn" style="width: 100%; padding: 12px; background: #16a34a; color: white; border: none; border-radius: 10px; font-weight: bold; font-size: 14px; margin-top: 10px;">
             保存海报
         </button>
     </div>
@@ -133,6 +162,7 @@
 <script>
     let currentUserId = '';
     let currentPeriod = 'month';
+    const periodMap = {'all':'全量','year':'年度','month':'本月','week':'本周'};
 
     function fitScale() {
         const wrapper = document.querySelector('.preview-area');
@@ -142,6 +172,19 @@
     }
     window.addEventListener('resize', fitScale);
     setTimeout(fitScale, 100);
+
+    // 🔥 核心工具：图片转 Base64，彻底解决黑屏问题
+    async function toBase64(url) {
+        try {
+            const res = await fetch(url);
+            const blob = await res.blob();
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+            });
+        } catch(e) { return null; }
+    }
 
     async function init() {
         const res = await fetch('/api/users');
@@ -171,8 +214,6 @@
         currentPeriod = p;
         document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        const map = {'all':'全量报告','year':'年度报告','month':'本月报告','week':'本周报告'};
-        document.getElementById('p-period').innerText = map[p];
         loadData();
     }
 
@@ -182,6 +223,12 @@
         const json = await res.json();
         const data = json.data;
 
+        // 1. 更新文案
+        const periodName = periodMap[currentPeriod];
+        document.getElementById('p-period').innerText = `${periodName}观影报告`;
+        document.getElementById('top1-badge').innerText = `TOP 1 ${periodName}最爱`;
+
+        // 2. 更新数据
         document.getElementById('p-plays').innerText = data.plays;
         document.getElementById('p-hours').innerText = data.hours;
         document.getElementById('p-server').innerText = data.server_plays;
@@ -192,36 +239,38 @@
 
         if(hasData) {
             const list = data.top_list;
-            // Top 1
+            // Top 1 处理
             if(list[0]) {
                 document.getElementById('top1-wrapper').style.display = 'block';
                 document.getElementById('top1-title').innerText = list[0].ItemName;
-                document.getElementById('top1-count').innerText = `${list[0].Count} 次播放`;
-                const img = new Image();
-                img.src = `/api/proxy/image/${list[0].ItemId}/backdrop`;
-                img.onload = () => { 
-                    document.getElementById('top1-img').style.backgroundImage = `url('${img.src}')`; 
-                    document.getElementById('poster-bg-img').style.backgroundImage = `url('${img.src}')`;
-                };
-                img.onerror = () => {
-                    const fallback = 'https://via.placeholder.com/400x225/333/666?text=No+Image';
-                    document.getElementById('top1-img').style.backgroundImage = `url('${fallback}')`;
-                    document.getElementById('poster-bg-img').style.backgroundImage = `url('${fallback}')`;
+                document.getElementById('top1-count').innerText = `${list[0].Count} 次播放 · ${Math.round(list[0].Duration/3600)} 小时`;
+                
+                // 🔥 关键：转 Base64 
+                const imgUrl = `/api/proxy/image/${list[0].ItemId}/backdrop`;
+                const b64 = await toBase64(imgUrl);
+                if(b64) {
+                    document.getElementById('top1-img').style.backgroundImage = `url('${b64}')`; 
+                    document.getElementById('poster-bg-img').style.backgroundImage = `url('${b64}')`;
                 }
             } else {
                 document.getElementById('top1-wrapper').style.display = 'none';
             }
 
-            // List
+            // List 处理
             const listEl = document.getElementById('rank-list');
             let html = '';
             const max = Math.min(list.length, 10);
             for(let i=1; i<max; i++) {
+                const hours = Math.round(list[i].Duration/3600);
+                const timeText = hours > 0 ? `${hours}h` : '<1h';
                 html += `
                 <div class="rank-row">
                     <div class="rank-idx">${i+1}</div>
                     <div class="rank-name">${list[i].ItemName}</div>
-                    <div class="rank-count">${list[i].Count}次</div>
+                    <div class="rank-data">
+                        <span>${list[i].Count}次</span>
+                        <span>${timeText}</span>
+                    </div>
                 </div>`;
             }
             listEl.innerHTML = html;
@@ -229,20 +278,34 @@
     }
 
     async function savePoster() {
+        const btn = document.getElementById('save-btn');
+        btn.innerText = '生成中...';
+        
         const node = document.getElementById('capture-target');
         const wrapper = document.getElementById('scale-wrapper');
         const oldT = wrapper.style.transform;
+        
+        // 还原缩放以保证高清
         wrapper.style.transform = 'none';
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, 100)); // 等待重绘
         
         try {
-            const canvas = await html2canvas(node, { scale: 2, useCORS: true, backgroundColor: '#1a1a1a' });
+            const canvas = await html2canvas(node, { 
+                scale: 2, 
+                useCORS: true, // 配合 Base64 双重保险
+                backgroundColor: '#1a1a1a',
+                logging: false
+            });
             const link = document.createElement('a');
             link.download = `EmbyReport_${currentUserId}.png`;
             link.href = canvas.toDataURL();
             link.click();
-        } catch(e) { alert('生成失败'); console.error(e); }
-        finally { wrapper.style.transform = oldT; }
+        } catch(e) { 
+            alert('生成失败，请刷新重试'); 
+        } finally { 
+            wrapper.style.transform = oldT;
+            btn.innerText = '保存海报';
+        }
     }
 
     init();
