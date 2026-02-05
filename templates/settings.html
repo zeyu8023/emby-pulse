@@ -1,0 +1,179 @@
+{% extends "layout.html" %}
+{% block title %}系统设置 - EmbyPulse{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto w-full px-4 md:px-8 py-8 pb-24">
+    
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-2xl font-black text-gray-900">系统设置</h1>
+            <p class="text-xs text-gray-500 mt-1">管理 Emby 连接与数据展示规则</p>
+        </div>
+        <button onclick="saveSettings()" id="save-btn" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-green-200 transition flex items-center">
+            <i class="fa-solid fa-save mr-2"></i> 保存配置
+        </button>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
+        <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4 flex items-center">
+            <i class="fa-solid fa-server text-blue-500 mr-2"></i> Emby 连接配置
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label class="block text-xs font-bold text-gray-500 mb-2">Emby 服务器地址</label>
+                <input type="text" id="emby_host" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" placeholder="http://192.168.1.x:8096">
+                <p class="text-[10px] text-gray-400 mt-1">请包含 http:// 或 https://，末尾不要加斜杠</p>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 mb-2">Emby API Key</label>
+                <input type="password" id="emby_api_key" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" placeholder="在此输入 API 密钥">
+                <p class="text-[10px] text-gray-400 mt-1">用于获取媒体库信息与用户列表</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
+        <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4 flex items-center">
+            <i class="fa-solid fa-image text-purple-500 mr-2"></i> 外部服务
+        </h3>
+        <div>
+            <label class="block text-xs font-bold text-gray-500 mb-2">TMDB API Key (可选)</label>
+            <input type="text" id="tmdb_api_key" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition" placeholder="留空则使用内置精选壁纸库">
+            <p class="text-[10px] text-gray-400 mt-1">配置后，登录页将显示实时的热门电影海报</p>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+            <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider flex items-center">
+                <i class="fa-solid fa-users-slash text-red-500 mr-2"></i> 用户可见性管理
+            </h3>
+            <span class="text-xs text-gray-400">关闭开关以隐藏用户</span>
+        </div>
+        
+        <div id="users-list" class="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
+            <div class="p-8 text-center text-gray-400 text-sm"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i> 加载用户列表中...</div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let hiddenUsers = new Set();
+
+    async function init() {
+        await loadSettings();
+        await loadUsersList();
+    }
+
+    async function loadSettings() {
+        try {
+            const res = await fetch('/api/settings');
+            const json = await res.json();
+            if(json.status === 'success') {
+                const data = json.data;
+                document.getElementById('emby_host').value = data.emby_host || '';
+                document.getElementById('emby_api_key').value = data.emby_api_key || '';
+                document.getElementById('tmdb_api_key').value = data.tmdb_api_key || '';
+                
+                // 初始化黑名单
+                if(data.hidden_users) {
+                    data.hidden_users.forEach(uid => hiddenUsers.add(uid));
+                }
+            }
+        } catch(e) { console.error(e); }
+    }
+
+    async function loadUsersList() {
+        const container = document.getElementById('users-list');
+        try {
+            const res = await fetch('/api/users');
+            const json = await res.json();
+            
+            if(json.status === 'success' && json.data.length > 0) {
+                let html = '';
+                json.data.forEach(user => {
+                    const isHidden = hiddenUsers.has(user.UserId);
+                    // 如果在黑名单里，checked = false (关闭状态)，否则 true
+                    const isChecked = !isHidden; 
+                    
+                    html += `
+                    <div class="flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition">
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-xs font-bold mr-3">
+                                ${user.UserName[0].toUpperCase()}
+                            </div>
+                            <div>
+                                <p class="text-sm font-bold text-gray-800">${user.UserName}</p>
+                                <p class="text-[10px] text-gray-400 font-mono">${user.UserId}</p>
+                            </div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" class="sr-only peer" onchange="toggleUser('${user.UserId}', this.checked)" ${isChecked ? 'checked' : ''}>
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                            <span class="ml-3 text-xs font-medium text-gray-500 w-12 text-right">${isChecked ? '显示' : '隐藏'}</span>
+                        </label>
+                    </div>`;
+                });
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = '<div class="p-6 text-center text-sm text-gray-400">暂无用户数据，请确保 Emby 正常连接且有播放记录。</div>';
+            }
+        } catch(e) {
+            container.innerHTML = '<div class="p-6 text-center text-sm text-red-400">加载用户失败，请检查配置。</div>';
+        }
+    }
+
+    function toggleUser(uid, isVisible) {
+        // 可见=true -> 从黑名单移除
+        // 不可见=false -> 加入黑名单
+        if (isVisible) {
+            hiddenUsers.delete(uid);
+        } else {
+            hiddenUsers.add(uid);
+        }
+        // 更新 UI 上的文字
+        const span = event.target.parentElement.querySelector('span');
+        span.innerText = isVisible ? '显示' : '隐藏';
+    }
+
+    async function saveSettings() {
+        const btn = document.getElementById('save-btn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-2"></i> 保存中...';
+        btn.disabled = true;
+
+        const payload = {
+            emby_host: document.getElementById('emby_host').value,
+            emby_api_key: document.getElementById('emby_api_key').value,
+            tmdb_api_key: document.getElementById('tmdb_api_key').value,
+            hidden_users: Array.from(hiddenUsers)
+        };
+
+        try {
+            const res = await fetch('/api/settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const json = await res.json();
+            
+            if(json.status === 'success') {
+                alert('✅ 配置已保存');
+                // 刷新页面以应用新配置
+                window.location.reload(); 
+            } else {
+                alert('❌ 保存失败: ' + json.message);
+            }
+        } catch(e) {
+            alert('❌ 网络错误');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    init();
+</script>
+{% endblock %}
