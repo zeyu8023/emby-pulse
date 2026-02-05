@@ -17,41 +17,55 @@
         background: white; 
         border: 1px solid #f3f4f6; 
         border-radius: 16px; 
-        padding: 20px; 
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+        padding: 24px; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
         transition: all 0.3s ease;
     }
-    .glass-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); }
+    .glass-card:hover { transform: translateY(-2px); box-shadow: 0 8px 12px rgba(0,0,0,0.05); }
     
-    /* 媒体库胶囊样式 */
-    .lib-pill {
-        background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 9999px;
-        padding: 8px 16px;
+    /* 数据项样式 */
+    .stat-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+        padding: 0 10px;
+        position: relative;
+    }
+    .stat-item:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 10%;
+        height: 80%;
+        width: 1px;
+        background-color: #f3f4f6;
+    }
+    .stat-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
         display: flex;
         align-items: center;
-        gap: 10px;
-        min-width: 140px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        justify-content: center;
+        margin-bottom: 8px;
+        font-size: 1.2rem;
     }
 </style>
 {% endblock %}
 {% block content %}
-<div class="p-4 md:p-8 space-y-8 pb-20">
+<div class="p-4 md:p-8 space-y-8 pb-20 max-w-[1920px] mx-auto">
     
-    <div class="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
-        <div class="lib-pill shrink-0">
-            <div class="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center"><i class="fa-solid fa-film"></i></div>
-            <div><p class="text-[10px] text-gray-400 font-bold uppercase">Movies</p><h4 class="text-sm font-black text-gray-800" id="lib-movies">-</h4></div>
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h2 class="text-2xl font-black text-gray-800 tracking-tight">数据概览</h2>
+            <div class="text-xs text-gray-400 mt-1 font-medium" id="current-date">Loading...</div>
         </div>
-        <div class="lib-pill shrink-0">
-            <div class="w-8 h-8 rounded-full bg-purple-50 text-purple-500 flex items-center justify-center"><i class="fa-solid fa-tv"></i></div>
-            <div><p class="text-[10px] text-gray-400 font-bold uppercase">Series</p><h4 class="text-sm font-black text-gray-800" id="lib-series">-</h4></div>
-        </div>
-        <div class="lib-pill shrink-0">
-            <div class="w-8 h-8 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center"><i class="fa-solid fa-layer-group"></i></div>
-            <div><p class="text-[10px] text-gray-400 font-bold uppercase">Episodes</p><h4 class="text-sm font-black text-gray-800" id="lib-episodes">-</h4></div>
+        <div class="w-full md:w-auto relative z-30">
+             <select id="dash-user-select" onchange="changeUser()" class="w-full md:w-48 appearance-none bg-white border border-gray-200 text-gray-700 py-2.5 pl-4 pr-10 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-bold transition hover:shadow-md cursor-pointer">
+                <option value="all">🌏 全服数据</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500"><i class="fa-solid fa-chevron-down text-xs"></i></div>
         </div>
     </div>
 
@@ -67,46 +81,58 @@
         <hr class="border-gray-100 mt-6 mb-2">
     </div>
 
-    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-            <h2 class="text-2xl font-black text-gray-800 tracking-tight">运营数据</h2>
-            <div class="text-xs text-gray-400 mt-1 font-medium" id="current-date">Loading...</div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <div class="glass-card flex flex-col justify-center">
+            <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center">
+                <i class="fa-solid fa-database mr-2"></i>媒体库统计
+            </h3>
+            <div class="flex justify-between items-center w-full">
+                <div class="stat-item">
+                    <div class="stat-icon bg-blue-50 text-blue-600"><i class="fa-solid fa-film"></i></div>
+                    <span class="text-xs text-gray-400 font-medium mb-1">电影</span>
+                    <span class="text-2xl font-black text-gray-800" id="lib-movies">-</span>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-icon bg-purple-50 text-purple-600"><i class="fa-solid fa-tv"></i></div>
+                    <span class="text-xs text-gray-400 font-medium mb-1">剧集</span>
+                    <span class="text-2xl font-black text-gray-800" id="lib-series">-</span>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-icon bg-amber-50 text-amber-600"><i class="fa-solid fa-layer-group"></i></div>
+                    <span class="text-xs text-gray-400 font-medium mb-1">总集数</span>
+                    <span class="text-2xl font-black text-gray-800" id="lib-episodes">-</span>
+                </div>
+            </div>
         </div>
-        <div class="w-full md:w-auto relative z-30">
-             <select id="dash-user-select" onchange="changeUser()" class="w-full md:w-48 appearance-none bg-white border border-gray-200 text-gray-700 py-2.5 pl-4 pr-10 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-bold transition hover:shadow-md cursor-pointer">
-                <option value="all">🌏 全服数据</option>
-            </select>
-            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500"><i class="fa-solid fa-chevron-down text-xs"></i></div>
-        </div>
-    </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-        <div class="glass-card flex items-center justify-between">
-            <div>
-                <p class="text-xs text-gray-400 font-bold uppercase mb-1">历史播放 (次)</p>
-                <h3 class="text-3xl font-black text-gray-800" id="stat-plays">-</h3>
+        <div class="glass-card flex flex-col justify-center">
+            <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center">
+                <i class="fa-solid fa-chart-pie mr-2"></i>运营概况
+            </h3>
+            <div class="flex justify-between items-center w-full">
+                <div class="stat-item">
+                    <div class="stat-icon bg-green-50 text-green-600"><i class="fa-solid fa-play"></i></div>
+                    <span class="text-xs text-gray-400 font-medium mb-1">历史播放</span>
+                    <span class="text-2xl font-black text-gray-800" id="stat-plays">-</span>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-icon bg-indigo-50 text-indigo-600"><i class="fa-solid fa-users"></i></div>
+                    <span class="text-xs text-gray-400 font-medium mb-1">活跃用户</span>
+                    <span class="text-2xl font-black text-gray-800" id="stat-users">-</span>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-icon bg-pink-50 text-pink-600"><i class="fa-solid fa-clock"></i></div>
+                    <span class="text-xs text-gray-400 font-medium mb-1">总时长 (H)</span>
+                    <span class="text-2xl font-black text-gray-800" id="stat-duration">-</span>
+                </div>
             </div>
-            <div class="w-12 h-12 rounded-xl bg-green-50 text-green-500 flex items-center justify-center text-xl"><i class="fa-solid fa-play"></i></div>
-        </div>
-        <div class="glass-card flex items-center justify-between">
-            <div>
-                <p class="text-xs text-gray-400 font-bold uppercase mb-1">活跃用户 (人)</p>
-                <h3 class="text-3xl font-black text-gray-800" id="stat-users">-</h3>
-            </div>
-            <div class="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-500 flex items-center justify-center text-xl"><i class="fa-solid fa-users"></i></div>
-        </div>
-        <div class="glass-card flex items-center justify-between">
-            <div>
-                <p class="text-xs text-gray-400 font-bold uppercase mb-1">总时长 (小时)</p>
-                <h3 class="text-3xl font-black text-gray-800" id="stat-duration">-</h3>
-            </div>
-            <div class="w-12 h-12 rounded-xl bg-pink-50 text-pink-500 flex items-center justify-center text-xl"><i class="fa-solid fa-clock"></i></div>
         </div>
     </div>
 
     <div>
         <h3 class="text-base font-bold text-gray-800 mb-4 flex items-center px-1"><i class="fa-solid fa-clock-rotate-left text-gray-400 mr-2"></i> 最近播放</h3>
-        <div class="flex md:grid md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-3 overflow-x-auto hide-scrollbar pb-4 snap-x" id="recent-container">
+        <div class="flex md:grid md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3 overflow-x-auto hide-scrollbar pb-4 snap-x" id="recent-container">
             <div class="col-span-full py-10 w-full flex justify-center items-center text-gray-400 bg-white rounded-xl border border-dashed border-gray-200">
                 <i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...
             </div>
