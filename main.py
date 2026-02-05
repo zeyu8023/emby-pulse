@@ -7,7 +7,7 @@ import json
 import time
 import random
 import threading
-import signal
+import io
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,9 +33,9 @@ DEFAULT_CONFIG = {
     "hidden_users": [],
     # 🤖 机器人配置
     "tg_bot_token": "",
-    "tg_chat_id": "",     # 管理员 Chat ID
-    "enable_bot": False,  # 机器人总开关
-    "enable_notify": False # 播放通知开关
+    "tg_chat_id": "",     
+    "enable_bot": False,  
+    "enable_notify": False 
 }
 
 class ConfigManager:
@@ -80,7 +80,7 @@ TMDB_FALLBACK_POOL = [
     "https://image.tmdb.org/t/p/original/lzWHmYdfeFiMIY4JaMmtR7GEli3.jpg",
 ]
 
-print(f"--- EmbyPulse V51 (Bot A+B) ---")
+print(f"--- EmbyPulse V52 (Rich Media Bot) ---")
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=86400*7)
@@ -145,14 +145,14 @@ def get_user_map():
         except: pass
     return user_map
 
-# ================= 🤖 Telegram Bot 核心逻辑 =================
+# ================= 🤖 Telegram Bot 核心逻辑 (v2.0) =================
 class TelegramBot:
     def __init__(self):
         self.running = False
         self.poll_thread = None
         self.monitor_thread = None
         self.offset = 0
-        self.active_sessions = {} # 缓存当前播放会话 {session_id: title}
+        self.active_sessions = {} 
         
     def start(self):
         if self.running: return
@@ -164,7 +164,6 @@ class TelegramBot:
         self.poll_thread = threading.Thread(target=self._polling_loop, daemon=True)
         self.poll_thread.start()
         
-        # 只有开启通知才启动监控线程
         if cfg.get("enable_notify"):
             self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
             self.monitor_thread.start()
@@ -179,6 +178,34 @@ class TelegramBot:
         proxy = cfg.get("proxy_url")
         return {"http": proxy, "https": proxy} if proxy else None
 
+    # 🔥 核心功能：下载 Emby 图片流
+    def _download_emby_image(self, item_id, img_type='Primary'):
+        key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+        if not key or not host: return None
+        try:
+            # 尝试获取图片（不走代理，因为是内网/本机连接）
+            url = f"{host}/emby/Items/{item_id}/Images/{img_type}?maxHeight=800&maxWidth=1200&quality=90&api_key={key}"
+            res = requests.get(url, timeout=5) # 直连
+            if res.status_code == 200:
+                return io.BytesIO(res.content)
+        except: pass
+        return None
+
+    # 🔥 核心功能：发送图片消息 (multipart/form-data)
+    def send_photo(self, chat_id, photo_io, caption, parse_mode="HTML"):
+        token = cfg.get("tg_bot_token")
+        if not token: return
+        
+        try:
+            url = f"https://api.telegram.org/bot{token}/sendPhoto"
+            data = {"chat_id": chat_id, "caption": caption, "parse_mode": parse_mode}
+            files = {"photo": ("image.jpg", photo_io, "image/jpeg")}
+            
+            # 发送请求 (走代理)
+            requests.post(url, data=data, files=files, proxies=self._get_proxies(), timeout=20)
+        except Exception as e: print(f"Bot SendPhoto Error: {e}")
+
+    # 发送纯文本消息
     def send_message(self, chat_id, text, parse_mode="HTML"):
         token = cfg.get("tg_bot_token")
         if not token: return
@@ -212,18 +239,20 @@ class TelegramBot:
         text = msg.get("text", "").strip()
         
         if admin_id and chat_id != admin_id:
-            self.send_message(chat_id, "🚫 <b>Access Denied</b>\n未授权的访问。")
+            self.send_message(chat_id, "🚫 <b>Access Denied</b>")
             return
 
         if text.startswith("/start"):
-            self.send_message(chat_id, "👋 <b>EmbyPulse 助理</b>\n\n指令列表：\n/now - 正在播放\n/stats - 数据日报\n/recent - 最近播放\n/check - 服务器检查\n/search [关键词] - 搜寻历史")
+            self.send_message(chat_id, "👋 <b>EmbyPulse v2.0</b>\n\n指令列表：\n/stats - 图文日报\n/now - 实时状态\n/recent - 最近记录\n/top - 排行榜\n/search [名] - 搜记录")
         elif text.startswith("/stats"): self._cmd_stats(chat_id)
         elif text.startswith("/recent"): self._cmd_recent(chat_id)
         elif text.startswith("/now"): self._cmd_now(chat_id)
         elif text.startswith("/check"): self._cmd_check(chat_id)
+        elif text.startswith("/top"): self._cmd_top(chat_id)
+        elif text.startswith("/history"): self._cmd_history(chat_id, text[9:].strip())
         elif text.startswith("/search"): self._cmd_search(chat_id, text[7:].strip())
 
-    # --- 2. 状态监控 (主动推送) ---
+    # --- 2. 实时监控 (图文推送) ---
     def _monitor_loop(self):
         admin_id = str(cfg.get("tg_chat_id"))
         if not admin_id: return
@@ -240,55 +269,166 @@ class TelegramBot:
                     for s in res.json():
                         if s.get("NowPlayingItem"):
                             sid = s.get("Id")
-                            title = s["NowPlayingItem"].get("Name", "未知")
                             user = s.get("UserName", "User")
-                            # 保存唯一标识
-                            current_sessions[sid] = f"{user} - {title}"
+                            item = s["NowPlayingItem"]
+                            title = item.get("Name", "未知")
+                            if item.get("SeriesName"): title = f"{item.get('SeriesName')} - {title}"
+                            
+                            # 缓存信息
+                            item_id = item.get("Id")
+                            device = s.get("DeviceName", "Unknown")
+                            transcode = "🔥转码" if s.get("PlayState", {}).get("IsTranscoding") else "⚡直通"
+                            
+                            current_sessions[sid] = {
+                                "title": title, "user": user, 
+                                "desc": f"📺 <b>{title}</b>\n👤 用户: {user}\n📱 设备: {device}\n⚙️ 模式: {transcode}",
+                                "item_id": item_id
+                            }
                     
-                    # 检查新增
+                    # 检查新增播放
                     for sid, info in current_sessions.items():
                         if sid not in self.active_sessions:
-                            # 过滤掉刚启动时的误报 (可选)
-                            self.send_message(admin_id, f"▶️ <b>开始播放</b>\n{info}")
+                            caption = f"▶️ <b>开始播放</b>\n\n{info['desc']}"
+                            # 尝试下载海报
+                            img_data = self._download_emby_image(info['item_id'], 'Backdrop') or self._download_emby_image(info['item_id'], 'Primary')
+                            
+                            if img_data:
+                                self.send_photo(admin_id, img_data, caption)
+                            else:
+                                self.send_message(admin_id, caption)
                     
                     # 检查停止
                     for sid, info in self.active_sessions.items():
                         if sid not in current_sessions:
-                            self.send_message(admin_id, f"⏹️ <b>播放结束</b>\n{info}")
+                            self.send_message(admin_id, f"⏹️ <b>播放结束</b>\n\n📺 {info['title']}\n👤 {info['user']}")
                     
                     self.active_sessions = current_sessions
                 
-                time.sleep(10) # 10秒轮询一次
+                time.sleep(10)
             except: time.sleep(10)
 
-    # --- 指令实现 ---
+    # --- 增强版指令实现 ---
+    
     def _cmd_stats(self, chat_id):
+        """图文日报：包含今日大盘、库存、今日流水"""
         where, params = get_base_filter('all')
-        plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where}", params)[0]['c']
-        # 今日播放
-        today_plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND DateCreated > date('now', 'start of day')", params)[0]['c']
         
-        lib_str = ""
+        # 1. 基础统计
+        total_plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where}", params)[0]['c']
+        
+        # 2. 今日统计
+        today_where = where + " AND DateCreated > date('now', 'start of day', 'localtime')"
+        today_plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {today_where}", params)[0]['c']
+        today_dur = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {today_where}", params)[0]['c'] or 0
+        today_hours = round(today_dur / 3600, 1)
+        active_users = query_db(f"SELECT COUNT(DISTINCT UserId) as c FROM PlaybackActivity {today_where}", params)[0]['c']
+        
+        # 3. 今日榜首
+        top_user_sql = f"SELECT UserId, SUM(PlayDuration) as D FROM PlaybackActivity {today_where} GROUP BY UserId ORDER BY D DESC LIMIT 1"
+        top_user_res = query_db(top_user_sql, params)
+        user_map = get_user_map()
+        top_user_str = "无"
+        if top_user_res:
+            u_name = user_map.get(top_user_res[0]['UserId'], "User")
+            u_time = round(top_user_res[0]['D'] / 3600, 1)
+            top_user_str = f"{u_name} ({u_time}h)"
+
+        # 4. 今日流水 (最近 5 条)
+        recent_sql = f"SELECT DateCreated, UserId, ItemName, PlayDuration FROM PlaybackActivity {today_where} ORDER BY DateCreated DESC LIMIT 5"
+        recent_rows = query_db(recent_sql, params)
+        
+        detail_str = ""
+        last_item_id = None # 用于获取背景图
+        
+        if recent_rows:
+            for r in recent_rows:
+                # 尝试获取 item_id 用于背景图 (这里需要重新查询下Item ID，为了性能我们假设最近一次播放的 ItemID 可以获取到)
+                # 实际上 PlaybackActivity 表里有 ItemId，我们需要在 SELECT 里加上
+                pass 
+                
+            # 重新查一下带 ItemId 的
+            recent_sql_v2 = f"SELECT DateCreated, UserId, ItemName, PlayDuration, ItemId FROM PlaybackActivity {today_where} ORDER BY DateCreated DESC LIMIT 5"
+            recent_rows_v2 = query_db(recent_sql_v2, params)
+            
+            for r in recent_rows_v2:
+                if not last_item_id: last_item_id = r['ItemId']
+                t = r['DateCreated'].split(' ')[1][:5] if ' ' in r['DateCreated'] else r['DateCreated'][-8:-3]
+                u = user_map.get(r['UserId'], "User")
+                dur = round((r['PlayDuration'] or 0) / 60)
+                detail_str += f"<code>{t}</code> 👤<b>{u}</b> ⏳{dur}m\n└ {r['ItemName']}\n\n"
+        else:
+            detail_str = "<i>(今日暂无播放记录)</i>"
+
+        # 5. 媒体库
+        lib_str = "连接中..."
         try:
             key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
             res = requests.get(f"{host}/emby/Items/Counts?api_key={key}", timeout=2)
             d = res.json()
-            lib_str = f"🎬 电影: {d.get('MovieCount')}\n📺 剧集: {d.get('SeriesCount')}\n"
+            lib_str = f"🎬 {d.get('MovieCount')} | 📺 {d.get('SeriesCount')} | 💿 {d.get('EpisodeCount')}"
         except: pass
-            
-        msg = f"📊 <b>EmbyPulse 日报</b>\n───────────────\n{lib_str}───────────────\n☀️ 今日播放: {today_plays}\n▶️ 累计播放: {plays}"
-        self.send_message(chat_id, msg)
+        
+        today_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        
+        caption = (
+            f"📊 <b>EmbyPulse 日报</b> ({today_date})\n"
+            f"───────────────\n"
+            f"<b>今日概览</b>\n"
+            f"▶️ 播放: <b>{today_plays}</b> 次\n"
+            f"⏱️ 时长: <b>{today_hours}</b> 小时\n"
+            f"👥 活跃: <b>{active_users}</b> 人\n"
+            f"🏆 榜首: <b>{top_user_str}</b>\n"
+            f"📦 库存: {lib_str}\n"
+            f"───────────────\n"
+            f"<b>今日流水 (最新5条)</b>\n"
+            f"{detail_str}"
+        )
+
+        # 发送 (带图)
+        img_data = None
+        if last_item_id:
+            img_data = self._download_emby_image(last_item_id, 'Backdrop')
+        
+        if img_data:
+            self.send_photo(chat_id, img_data, caption)
+        else:
+            self.send_message(chat_id, caption)
 
     def _cmd_recent(self, chat_id):
         where, params = get_base_filter('all')
-        rows = query_db(f"SELECT DateCreated, UserId, ItemName FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 5", params)
+        rows = query_db(f"SELECT DateCreated, UserId, ItemName, PlayDuration FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 8", params)
         user_map = get_user_map()
         if not rows: return self.send_message(chat_id, "📭 暂无记录")
-        msg = "🕰 <b>最近 5 条记录</b>\n\n"
+        msg = "🕰 <b>最近播放记录</b>\n\n"
         for r in rows:
             u = user_map.get(r['UserId'], "User")
             t = r['DateCreated'].split(' ')[1][:5] if ' ' in r['DateCreated'] else r['DateCreated']
-            msg += f"• <code>{t}</code> <b>{u}</b>\n  └ {r['ItemName']}\n"
+            dur = round((r['PlayDuration'] or 0) / 60)
+            msg += f"• <code>{t}</code> <b>{u}</b> ({dur}m)\n  └ {r['ItemName']}\n"
+        self.send_message(chat_id, msg)
+
+    def _cmd_top(self, chat_id):
+        where, params = get_base_filter('all')
+        # 本周
+        week_sql = f"SELECT UserId, SUM(PlayDuration) as D FROM PlaybackActivity {where} AND DateCreated > date('now', '-7 days') GROUP BY UserId ORDER BY D DESC LIMIT 3"
+        week_rows = query_db(week_sql, params)
+        # 本月
+        month_sql = f"SELECT UserId, SUM(PlayDuration) as D FROM PlaybackActivity {where} AND DateCreated > date('now', '-30 days') GROUP BY UserId ORDER BY D DESC LIMIT 3"
+        month_rows = query_db(month_sql, params)
+        
+        user_map = get_user_map()
+        
+        def format_rank(rows):
+            if not rows: return "<i>无数据</i>"
+            res = ""
+            medals = ["🥇", "🥈", "🥉"]
+            for i, r in enumerate(rows):
+                u = user_map.get(r['UserId'], "User")
+                h = round(r['D']/3600, 1)
+                res += f"{medals[i]} <b>{u}</b>: {h}h\n"
+            return res
+
+        msg = f"🏆 <b>观影排行榜</b>\n\n<b>本周 Top 3</b>\n{format_rank(week_rows)}\n<b>本月 Top 3</b>\n{format_rank(month_rows)}"
         self.send_message(chat_id, msg)
 
     def _cmd_now(self, chat_id):
@@ -298,21 +438,29 @@ class TelegramBot:
             sessions = [s for s in res.json() if s.get("NowPlayingItem")]
             if not sessions: return self.send_message(chat_id, "💤 当前没有正在播放的内容")
             
-            msg = f"🟢 <b>正在播放 ({len(sessions)})</b>\n\n"
             for s in sessions:
                 item = s["NowPlayingItem"]
-                # 计算进度
+                item_id = item.get("Id")
+                title = item.get("Name")
+                if item.get("SeriesName"): title = f"{item.get('SeriesName')} - {title}"
+                
                 ticks = s.get("PlayState", {}).get("PositionTicks", 0)
                 total = item.get("RunTimeTicks", 1)
                 pct = int((ticks / total) * 100) if total > 0 else 0
-                # 进度条
-                bar_len = 10
-                filled = int(bar_len * pct / 100)
-                bar = "▓" * filled + "░" * (bar_len - filled)
+                bar = "▓" * (pct // 10) + "░" * (10 - (pct // 10))
                 
                 transcode = "🔥转码" if s.get("PlayState", {}).get("IsTranscoding") else "⚡直通"
-                msg += f"👤 <b>{s.get('UserName')}</b> ({s.get('DeviceName')})\n📺 {item.get('Name')}\n[{bar}] {pct}% {transcode}\n\n"
-            self.send_message(chat_id, msg)
+                device = s.get("DeviceName")
+                user = s.get("UserName")
+                
+                caption = f"🟢 <b>正在播放</b>\n\n📺 <b>{title}</b>\n👤 {user} @ {device}\n[{bar}] {pct}%\n⚙️ {transcode}"
+                
+                img_data = self._download_emby_image(item_id, 'Backdrop')
+                if img_data:
+                    self.send_photo(chat_id, img_data, caption)
+                else:
+                    self.send_message(chat_id, caption)
+                    
         except: self.send_message(chat_id, "❌ 连接 Emby 失败")
 
     def _cmd_check(self, chat_id):
@@ -325,10 +473,35 @@ class TelegramBot:
         except:
             self.send_message(chat_id, "❌ <b>Emby 服务器离线</b>\n请检查网络或配置。")
 
+    def _cmd_history(self, chat_id, username):
+        if not username: return self.send_message(chat_id, "用法: /history 用户名")
+        # 模糊查找用户ID
+        user_map = get_user_map()
+        target_id = None
+        for uid, name in user_map.items():
+            if name.lower() == username.lower():
+                target_id = uid
+                break
+        
+        if not target_id: return self.send_message(chat_id, f"🚫 找不到用户: {username}")
+        
+        where, params = get_base_filter('all') # 获取基础过滤，但不传user_id参数
+        sql = f"SELECT DateCreated, ItemName, PlayDuration FROM PlaybackActivity {where} AND UserId = ? ORDER BY DateCreated DESC LIMIT 10"
+        rows = query_db(sql, params + [target_id])
+        
+        if not rows: return self.send_message(chat_id, f"📭 {username} 暂无记录")
+        
+        msg = f"👤 <b>{username} 的最近记录</b>\n\n"
+        for r in rows:
+            t = r['DateCreated'].split(' ')[0][5:] # MM-DD
+            dur = round((r['PlayDuration'] or 0) / 60)
+            msg += f"• {t} | {dur}m | {r['ItemName']}\n"
+        self.send_message(chat_id, msg)
+
     def _cmd_search(self, chat_id, keyword):
         if not keyword: return self.send_message(chat_id, "请提供关键词，例如：/search 阿凡达")
         where, params = get_base_filter('all')
-        sql = f"SELECT DateCreated, UserId, ItemName FROM PlaybackActivity {where} AND ItemName LIKE ? ORDER BY DateCreated DESC LIMIT 5"
+        sql = f"SELECT DateCreated, UserId, ItemName FROM PlaybackActivity {where} AND ItemName LIKE ? ORDER BY DateCreated DESC LIMIT 8"
         rows = query_db(sql, params + [f"%{keyword}%"])
         user_map = get_user_map()
         
@@ -377,10 +550,8 @@ def api_save_bot_settings(data: BotSettingsModel, request: Request):
     cfg.set("enable_bot", data.enable_bot)
     cfg.set("enable_notify", data.enable_notify)
     
-    # 重启机器人以应用配置
     bot.stop()
     if data.enable_bot:
-        # 给点时间让线程退出
         threading.Timer(1.0, bot.start).start()
     
     return {"status": "success", "message": "配置已保存，机器人状态已更新"}
@@ -402,11 +573,9 @@ def api_test_bot(request: Request):
     except Exception as e:
         return {"status": "error", "message": f"网络连接失败: {str(e)}"}
 
-# ... (后面是原来的 认证路由、页面路由、API接口，保持不变) ...
-# 为了节省篇幅，这里省略了原来的代码，请务必保留原来的 Login, Dashboard, Stats 等接口代码！！！
-# ⚠️ 注意：请将上面的代码与你原有的 main.py 合并，或者确保下面的代码被包含在内
+# ... (后面是认证路由、页面路由、核心API，请保持不变) ...
+# 为了保证文件完整性，以下是必需的尾部代码
 
-# ================= 🔐 认证与壁纸 (原代码) =================
 @app.get("/login")
 async def page_login(request: Request):
     if request.session.get("user"): return RedirectResponse("/")
@@ -452,7 +621,6 @@ def api_get_wallpaper():
         except: pass
     return {"status": "success", "url": random.choice(TMDB_FALLBACK_POOL), "title": "Cinematic Collection"}
 
-# ================= 页面路由 (原代码) =================
 @app.get("/")
 async def page_dashboard(request: Request):
     if not request.session.get("user"): return RedirectResponse("/login")
@@ -478,7 +646,6 @@ async def page_settings(request: Request):
     if not request.session.get("user"): return RedirectResponse("/login")
     return templates.TemplateResponse("settings.html", {"request": request, "active_page": "settings", "user": request.session.get("user")})
 
-# ================= 设置 API (原代码) =================
 @app.get("/api/settings")
 def api_get_settings(request: Request):
     if not request.session.get("user"): return {"status": "error", "message": "Unauthorized"}
@@ -497,7 +664,6 @@ def api_save_settings(data: SettingsModel, request: Request):
     cfg.set("tmdb_api_key", data.tmdb_api_key); cfg.set("proxy_url", data.proxy_url); cfg.set("hidden_users", data.hidden_users)
     return {"status": "success", "message": "配置已保存"}
 
-# ================= 核心统计 API (原代码，略微简化显示) =================
 @app.get("/api/users")
 def api_get_users():
     try:
