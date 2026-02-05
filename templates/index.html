@@ -23,16 +23,53 @@
     }
     .glass-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); }
     
-    /* 统计图标微渐变 */
-    .icon-bg { background: linear-gradient(135deg, #f9fafb, #f3f4f6); }
+    /* 媒体库胶囊样式 */
+    .lib-pill {
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 9999px;
+        padding: 8px 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 140px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
 </style>
 {% endblock %}
 {% block content %}
 <div class="p-4 md:p-8 space-y-8 pb-20">
     
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div class="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
+        <div class="lib-pill shrink-0">
+            <div class="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center"><i class="fa-solid fa-film"></i></div>
+            <div><p class="text-[10px] text-gray-400 font-bold uppercase">Movies</p><h4 class="text-sm font-black text-gray-800" id="lib-movies">-</h4></div>
+        </div>
+        <div class="lib-pill shrink-0">
+            <div class="w-8 h-8 rounded-full bg-purple-50 text-purple-500 flex items-center justify-center"><i class="fa-solid fa-tv"></i></div>
+            <div><p class="text-[10px] text-gray-400 font-bold uppercase">Series</p><h4 class="text-sm font-black text-gray-800" id="lib-series">-</h4></div>
+        </div>
+        <div class="lib-pill shrink-0">
+            <div class="w-8 h-8 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center"><i class="fa-solid fa-layer-group"></i></div>
+            <div><p class="text-[10px] text-gray-400 font-bold uppercase">Episodes</p><h4 class="text-sm font-black text-gray-800" id="lib-episodes">-</h4></div>
+        </div>
+    </div>
+
+    <div id="live-section" class="hidden animate-fade-in">
+        <div class="flex items-center gap-2 mb-3 px-1">
+            <span class="relative flex h-3 w-3">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+            </span>
+            <h3 class="text-sm font-bold text-gray-800">正在播放</h3>
+        </div>
+        <div id="live-container" class="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-x-auto hide-scrollbar pb-2 snap-x"></div>
+        <hr class="border-gray-100 mt-6 mb-2">
+    </div>
+
+    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-            <h2 class="text-2xl font-black text-gray-800 tracking-tight">概览</h2>
+            <h2 class="text-2xl font-black text-gray-800 tracking-tight">运营数据</h2>
             <div class="text-xs text-gray-400 mt-1 font-medium" id="current-date">Loading...</div>
         </div>
         <div class="w-full md:w-auto relative z-30">
@@ -43,46 +80,33 @@
         </div>
     </div>
 
-    <div id="live-section" class="hidden animate-fade-in">
-        <h3 class="text-sm font-bold text-red-500 mb-3 flex items-center animate-pulse px-1">
-            <span class="w-2 h-2 bg-red-500 rounded-full mr-2"></span> 正在播放 (Live)
-        </h3>
-        <div id="live-container" class="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-x-auto hide-scrollbar pb-2 snap-x"></div>
-        <hr class="border-gray-100 mt-6 mb-2">
-    </div>
-
-    <div class="flex md:grid md:grid-cols-3 lg:grid-cols-6 gap-4 overflow-x-auto hide-scrollbar pb-4 snap-x">
-        
-        <div class="glass-card flex-shrink-0 w-40 md:w-auto snap-start flex flex-col justify-between h-32">
-            <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center mb-2"><i class="fa-solid fa-film"></i></div>
-            <div><p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">电影库存</p><h4 class="text-2xl font-black text-gray-800" id="lib-movies">-</h4></div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+        <div class="glass-card flex items-center justify-between">
+            <div>
+                <p class="text-xs text-gray-400 font-bold uppercase mb-1">历史播放 (次)</p>
+                <h3 class="text-3xl font-black text-gray-800" id="stat-plays">-</h3>
+            </div>
+            <div class="w-12 h-12 rounded-xl bg-green-50 text-green-500 flex items-center justify-center text-xl"><i class="fa-solid fa-play"></i></div>
         </div>
-        <div class="glass-card flex-shrink-0 w-40 md:w-auto snap-start flex flex-col justify-between h-32">
-            <div class="w-8 h-8 rounded-lg bg-purple-50 text-purple-500 flex items-center justify-center mb-2"><i class="fa-solid fa-tv"></i></div>
-            <div><p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">剧集库存</p><h4 class="text-2xl font-black text-gray-800" id="lib-series">-</h4></div>
+        <div class="glass-card flex items-center justify-between">
+            <div>
+                <p class="text-xs text-gray-400 font-bold uppercase mb-1">活跃用户 (人)</p>
+                <h3 class="text-3xl font-black text-gray-800" id="stat-users">-</h3>
+            </div>
+            <div class="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-500 flex items-center justify-center text-xl"><i class="fa-solid fa-users"></i></div>
         </div>
-        <div class="glass-card flex-shrink-0 w-40 md:w-auto snap-start flex flex-col justify-between h-32">
-            <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-500 flex items-center justify-center mb-2"><i class="fa-solid fa-layer-group"></i></div>
-            <div><p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">总集数</p><h4 class="text-2xl font-black text-gray-800" id="lib-episodes">-</h4></div>
-        </div>
-
-        <div class="glass-card flex-shrink-0 w-40 md:w-auto snap-start flex flex-col justify-between h-32 border-l-4 border-l-green-500">
-            <div class="w-8 h-8 rounded-lg bg-green-50 text-green-600 flex items-center justify-center mb-2"><i class="fa-solid fa-play"></i></div>
-            <div><p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">历史播放</p><h4 class="text-2xl font-black text-gray-800" id="stat-plays">-</h4></div>
-        </div>
-        <div class="glass-card flex-shrink-0 w-40 md:w-auto snap-start flex flex-col justify-between h-32 border-l-4 border-l-indigo-500">
-            <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center mb-2"><i class="fa-solid fa-users"></i></div>
-            <div><p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">活跃用户</p><h4 class="text-2xl font-black text-gray-800" id="stat-users">-</h4></div>
-        </div>
-        <div class="glass-card flex-shrink-0 w-40 md:w-auto snap-start flex flex-col justify-between h-32 border-l-4 border-l-pink-500">
-            <div class="w-8 h-8 rounded-lg bg-pink-50 text-pink-600 flex items-center justify-center mb-2"><i class="fa-solid fa-clock"></i></div>
-            <div><p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">总时长(H)</p><h4 class="text-2xl font-black text-gray-800" id="stat-duration">-</h4></div>
+        <div class="glass-card flex items-center justify-between">
+            <div>
+                <p class="text-xs text-gray-400 font-bold uppercase mb-1">总时长 (小时)</p>
+                <h3 class="text-3xl font-black text-gray-800" id="stat-duration">-</h3>
+            </div>
+            <div class="w-12 h-12 rounded-xl bg-pink-50 text-pink-500 flex items-center justify-center text-xl"><i class="fa-solid fa-clock"></i></div>
         </div>
     </div>
 
     <div>
-        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center px-1"><i class="fa-solid fa-clock-rotate-left text-green-600 mr-2"></i> 最近播放</h3>
-        <div class="flex md:grid md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-4 overflow-x-auto hide-scrollbar pb-4 snap-x" id="recent-container">
+        <h3 class="text-base font-bold text-gray-800 mb-4 flex items-center px-1"><i class="fa-solid fa-clock-rotate-left text-gray-400 mr-2"></i> 最近播放</h3>
+        <div class="flex md:grid md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-3 overflow-x-auto hide-scrollbar pb-4 snap-x" id="recent-container">
             <div class="col-span-full py-10 w-full flex justify-center items-center text-gray-400 bg-white rounded-xl border border-dashed border-gray-200">
                 <i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...
             </div>
@@ -94,9 +118,9 @@
             <div class="flex justify-between items-center mb-6">
                 <h3 class="text-base font-bold text-gray-800 flex items-center"><i class="fa-solid fa-chart-area text-blue-500 mr-2"></i> 播放时长趋势</h3>
                 <div class="flex bg-gray-100 rounded-lg p-1 text-[10px]">
-                    <button onclick="switchTrend('day')" id="trend-btn-day" class="px-3 py-1.5 rounded-md bg-white shadow-sm text-gray-900 font-bold transition">近30天</button>
-                    <button onclick="switchTrend('week')" id="trend-btn-week" class="px-3 py-1.5 rounded-md text-gray-500 hover:bg-white hover:text-gray-900 transition">近12周</button>
-                    <button onclick="switchTrend('month')" id="trend-btn-month" class="px-3 py-1.5 rounded-md text-gray-500 hover:bg-white hover:text-gray-900 transition">近12月</button>
+                    <button onclick="switchTrend('day')" id="trend-btn-day" class="px-3 py-1.5 rounded-md bg-white shadow-sm text-gray-900 font-bold transition">30天</button>
+                    <button onclick="switchTrend('week')" id="trend-btn-week" class="px-3 py-1.5 rounded-md text-gray-500 hover:bg-white hover:text-gray-900 transition">12周</button>
+                    <button onclick="switchTrend('month')" id="trend-btn-month" class="px-3 py-1.5 rounded-md text-gray-500 hover:bg-white hover:text-gray-900 transition">12月</button>
                 </div>
             </div>
             <div class="relative h-64 w-full"><canvas id="trendChart"></canvas></div>
@@ -120,11 +144,10 @@
 
     async function init() {
         await loadUsers();
-        // 初始化全服数据
         fetchDashboardData('all');
         fetchRecentActivity('all');
         fetchTopUsers();
-        initTrendChart('all', 'day'); // 默认加载日图表
+        initTrendChart('all', 'day');
         fetchLive(); 
         setInterval(fetchLive, 10000);
     }
@@ -151,7 +174,6 @@
                     
                     const title = item.SeriesName ? `${item.SeriesName} - ${item.Name}` : (item.Name || '未知内容');
                     
-                    // 🔥 进度计算修复
                     let percentage = 0;
                     if (item.RunTimeTicks && item.RunTimeTicks > 0) {
                         percentage = Math.round((playState.PositionTicks / item.RunTimeTicks) * 100);
@@ -212,15 +234,13 @@
         const userId = document.getElementById('dash-user-select').value;
         fetchDashboardData(userId);
         fetchRecentActivity(userId);
-        initTrendChart(userId, currentTrendDim); // 切换用户时保留当前维度
+        initTrendChart(userId, currentTrendDim); 
     }
 
-    // 🔥 切换图表维度
     function switchTrend(dim) {
         currentTrendDim = dim;
         const userId = document.getElementById('dash-user-select').value;
         
-        // 更新按钮样式
         ['day', 'week', 'month'].forEach(d => {
             const btn = document.getElementById(`trend-btn-${d}`);
             if(d === dim) {
@@ -243,7 +263,6 @@
                 document.getElementById('stat-users').innerText = data.active_users || 0;
                 document.getElementById('stat-duration').innerText = Math.round((data.total_duration || 0) / 3600);
                 
-                // 🔥 更新库存数据
                 if(data.library) {
                     document.getElementById('lib-movies').innerText = data.library.movie || '-';
                     document.getElementById('lib-series').innerText = data.library.series || '-';
@@ -264,13 +283,12 @@
                     const displayTitle = item.DisplayName || item.ItemName;
                     const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
                     
-                    // 修正时间解析逻辑，不再叠加 Z
                     let dateStr = item.DateCreated;
                     if (dateStr && dateStr.includes(' ')) dateStr = dateStr.replace(' ', 'T');
                     const date = new Date(dateStr).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'});
                     
                     html += `
-                    <div class="recent-card group relative bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg transition flex-shrink-0 w-32 md:w-auto snap-center">
+                    <div class="group relative bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg transition flex-shrink-0 w-28 md:w-auto snap-center recent-card">
                         <div class="aspect-[2/3] overflow-hidden bg-gray-100 relative">
                             <img src="${imgUrl}" class="w-full h-full object-cover transition duration-700 group-hover:scale-110" loading="lazy" onerror="this.src='https://img.hotimg.com/a444d32a033994d5b.png'">
                             <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60"></div>
@@ -320,16 +338,15 @@
     
     async function initTrendChart(userId, dimension = 'day') {
         const ctx = document.getElementById('trendChart').getContext('2d');
-        if(trendChart) trendChart.destroy(); // 销毁旧图表
+        if(trendChart) trendChart.destroy(); 
 
         try {
-            // 🔥 调用后端新接口，传入 dimension
             const res = await fetch(`/api/stats/trend?user_id=${userId}&dimension=${dimension}`);
             const json = await res.json();
             const data = json.data || {};
             
             const labels = Object.keys(data);
-            const values = Object.values(data).map(v => Math.round(v/3600)); // 秒转小时
+            const values = Object.values(data).map(v => Math.round(v/3600)); 
 
             let gradient = ctx.createLinearGradient(0, 0, 0, 400);
             gradient.addColorStop(0, 'rgba(59, 130, 246, 0.15)');

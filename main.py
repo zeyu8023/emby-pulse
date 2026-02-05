@@ -19,7 +19,7 @@ EMBY_HOST = os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/')
 EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip()
 FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
-print(f"--- EmbyPulse V43 (UI Remaster & Logic Fix) ---")
+print(f"--- EmbyPulse V44 (UI Remaster Final) ---")
 print(f"DB Path: {DB_PATH}")
 
 app = FastAPI()
@@ -133,7 +133,7 @@ def api_recent_activity(user_id: Optional[str] = None):
         if user_id and user_id != 'all':
             where += " AND UserId = ?"
             params.append(user_id)
-        # ⚡ 重点: 将 LIMIT 从 200 提升至 1000，确保去重后能凑够 20 条
+        # ⚡ 重点: 将 LIMIT 从 200 提升至 1000
         sql = f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 1000"
         results = query_db(sql, params)
         if not results: return {"status": "success", "data": []}
@@ -165,7 +165,6 @@ def api_live_sessions():
     except: pass
     return {"status": "success", "data": []}
 
-# ================= API: 排行/洞察/图表 =================
 @app.get("/api/stats/top_movies")
 def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by: str = 'count'):
     try:
@@ -247,7 +246,6 @@ def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'day'):
         print(f"Chart Error: {e}")
         return {"status": "error", "data": {}}
 
-# ================= API: 海报生成 =================
 @app.get("/api/stats/poster_data")
 def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
     try:
@@ -303,7 +301,6 @@ def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
         }
     except Exception as e: return {"status": "error", "message": str(e), "data": {"plays": 0, "hours": 0, "server_plays": 0, "top_list": []}}
 
-# ================= 辅助 API =================
 @app.get("/api/stats/top_users_list")
 def api_top_users_list():
     try:
