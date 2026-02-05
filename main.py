@@ -5,6 +5,7 @@ import requests
 import datetime
 import json
 import time
+import random
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,10 +15,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 
-# ... (前面的 import 不变)
-
 # ================= 配置与持久化 =================
-# 🔥 修改：将配置文件独立存放在 /app/config 目录，与 Emby 数据隔离
+# 建议修改为：固定配置文件的路径，不再依赖 DB_PATH
 CONFIG_DIR = "/app/config"
 if not os.path.exists(CONFIG_DIR):
     os.makedirs(CONFIG_DIR, exist_ok=True)
@@ -30,6 +29,7 @@ DEFAULT_CONFIG = {
     "emby_host": os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/'),
     "emby_api_key": os.getenv("EMBY_API_KEY", "").strip(),
     "tmdb_api_key": os.getenv("TMDB_API_KEY", "").strip(),
+    "proxy_url": "",    # 🔥 新增: 代理地址
     "hidden_users": [], # 用户黑名单 ID 列表
     "public_host": ""   # 公网访问地址(备用)
 }
@@ -81,7 +81,7 @@ TMDB_FALLBACK_POOL = [
     "https://image.tmdb.org/t/p/original/lzWHmYdfeFiMIY4JaMmtR7GEli3.jpg",
 ]
 
-print(f"--- EmbyPulse V47 (Settings & User Filter) ---")
+print(f"--- EmbyPulse V48 (Proxy Support) ---")
 print(f"Config File: {CONFIG_FILE}")
 
 app = FastAPI()
@@ -101,6 +101,7 @@ class SettingsModel(BaseModel):
     emby_host: str
     emby_api_key: str
     tmdb_api_key: Optional[str] = ""
+    proxy_url: Optional[str] = "" # 🔥 新增
     hidden_users: List[str] = []
 
 # ================= 辅助函数 =================
@@ -118,24 +119,17 @@ def query_db(query, args=(), one=False):
         print(f"❌ SQL Error: {e}")
         return None
 
-# 🔥 核心：构建带黑名单过滤的 SQL 条件
 def get_base_filter(user_id_filter: Optional[str]):
     where = "WHERE 1=1"
     params = []
-    
-    # 1. 指定用户筛选
     if user_id_filter and user_id_filter != 'all':
         where += " AND UserId = ?"
         params.append(user_id_filter)
-    
-    # 2. 黑名单过滤 (仅当查看全服数据时生效)
-    # 如果指定了查看某用户，即使他在黑名单也显示
     if (not user_id_filter or user_id_filter == 'all') and len(cfg.get("hidden_users")) > 0:
         hidden = cfg.get("hidden_users")
         placeholders = ','.join(['?'] * len(hidden))
         where += f" AND UserId NOT IN ({placeholders})"
         params.extend(hidden)
-        
     return where, params
 
 def get_user_map():
@@ -160,14 +154,13 @@ async def page_settings(request: Request):
 def api_get_settings(request: Request):
     if not request.session.get("user"): return {"status": "error", "message": "Unauthorized"}
     conf = cfg.get_all().copy()
-    # 脱敏处理 (可选，这里为了方便修改暂不脱敏)
     return {"status": "success", "data": conf}
 
 @app.post("/api/settings")
 def api_save_settings(data: SettingsModel, request: Request):
     if not request.session.get("user"): return {"status": "error", "message": "Unauthorized"}
     
-    # 验证 Emby 连接性
+    # 验证 Emby 连接性 (不走代理)
     try:
         test_url = f"{data.emby_host.rstrip('/')}/emby/System/Info?api_key={data.emby_api_key}"
         res = requests.get(test_url, timeout=5)
@@ -180,11 +173,12 @@ def api_save_settings(data: SettingsModel, request: Request):
     cfg.set("emby_host", data.emby_host.rstrip('/'))
     cfg.set("emby_api_key", data.emby_api_key)
     cfg.set("tmdb_api_key", data.tmdb_api_key)
+    cfg.set("proxy_url", data.proxy_url) # 🔥 保存代理
     cfg.set("hidden_users", data.hidden_users)
     
     return {"status": "success", "message": "配置已保存"}
 
-# ================= 🔐 认证路由 =================
+# ================= 🔐 认证与壁纸 =================
 @app.get("/login")
 async def page_login(request: Request):
     if request.session.get("user"): return RedirectResponse("/")
@@ -200,6 +194,7 @@ def api_login(data: LoginModel, request: Request):
         headers = {"X-Emby-Authorization": 'MediaBrowser Client="EmbyPulse", Device="Web", DeviceId="EmbyPulse", Version="1.0.0"'}
         payload = {"Username": data.username, "Pw": data.password}
         
+        # Emby 登录不走代理
         res = requests.post(auth_url, json=payload, headers=headers, timeout=5)
         
         if res.status_code == 200:
@@ -208,11 +203,7 @@ def api_login(data: LoginModel, request: Request):
             if not user_info.get("Policy", {}).get("IsAdministrator", False):
                 return {"status": "error", "message": "仅限 Emby 管理员登录"}
             
-            request.session["user"] = {
-                "id": user_info.get("Id"),
-                "name": user_info.get("Name"),
-                "is_admin": True
-            }
+            request.session["user"] = {"id": user_info.get("Id"), "name": user_info.get("Name"), "is_admin": True}
             return {"status": "success", "message": "登录成功"}
         else:
             return {"status": "error", "message": "用户名或密码错误"}
@@ -227,17 +218,25 @@ async def api_logout(request: Request):
 @app.get("/api/wallpaper")
 def api_get_wallpaper():
     tmdb_key = cfg.get("tmdb_api_key")
+    proxy = cfg.get("proxy_url")
+    
+    # 🔥 配置代理
+    proxies = {"http": proxy, "https": proxy} if proxy else None
+    
     if tmdb_key:
         try:
             url = f"https://api.themoviedb.org/3/trending/all/week?api_key={tmdb_key}&language=zh-CN"
-            res = requests.get(url, timeout=3)
+            # 🔥 请求 TMDB 时使用代理
+            res = requests.get(url, timeout=8, proxies=proxies)
             if res.status_code == 200:
                 data = res.json()
                 results = [i for i in data.get("results", []) if i.get("backdrop_path")]
                 if results:
                     target = random.choice(results)
                     return {"status": "success", "url": f"https://image.tmdb.org/t/p/original{target['backdrop_path']}", "title": target.get("title") or target.get("name")}
-        except: pass
+        except Exception as e:
+            print(f"TMDB Fetch Error (Proxy={proxy}): {e}")
+            
     return {"status": "success", "url": random.choice(TMDB_FALLBACK_POOL), "title": "Cinematic Collection"}
 
 # ================= 页面路由 =================
@@ -265,22 +264,17 @@ async def page_details(request: Request):
 @app.get("/api/users")
 def api_get_users():
     try:
-        # 获取所有有播放记录的用户
         results = query_db("SELECT DISTINCT UserId FROM PlaybackActivity")
         if not results: return {"status": "success", "data": []}
-        
-        user_map = get_user_map() # 从 Emby 实时获取名字
+        user_map = get_user_map() 
         hidden_users = cfg.get("hidden_users") or []
-        
         data = []
         for row in results:
             uid = row['UserId']
             if not uid: continue
             name = user_map.get(uid, f"User {str(uid)[:5]}")
-            # 标记是否被隐藏
             is_hidden = uid in hidden_users
             data.append({"UserId": uid, "UserName": name, "IsHidden": is_hidden})
-            
         data.sort(key=lambda x: x['UserName'])
         return {"status": "success", "data": data}
     except Exception as e: return {"status": "error", "message": str(e)}
@@ -289,7 +283,6 @@ def api_get_users():
 def api_dashboard(user_id: Optional[str] = None):
     try:
         where, params = get_base_filter(user_id)
-        
         plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where}", params)
         users = query_db(f"SELECT COUNT(DISTINCT UserId) as c FROM PlaybackActivity {where} AND DateCreated > date('now', '-30 days')", params)
         dur = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {where}", params)
@@ -424,13 +417,12 @@ def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'day'):
 @app.get("/api/stats/poster_data")
 def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
     try:
-        where_base, params = get_base_filter(user_id) # 这里已经包含了 hidden_users 过滤
+        where_base, params = get_base_filter(user_id) 
         date_filter = ""
         if period == 'week': date_filter = " AND DateCreated > date('now', '-7 days')"
         elif period == 'month': date_filter = " AND DateCreated > date('now', '-30 days')"
         elif period == 'year': date_filter = " AND DateCreated > date('now', '-1 year')"
         
-        # 服务器总播放也应该排除黑名单用户
         server_res = query_db(f"SELECT COUNT(*) as Plays FROM PlaybackActivity {get_base_filter('all')[0]} {date_filter}", get_base_filter('all')[1])
         server_plays = server_res[0]['Plays'] if server_res else 0
 
@@ -468,7 +460,6 @@ def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
 @app.get("/api/stats/top_users_list")
 def api_top_users_list():
     try:
-        # 获取所有用户统计
         res = query_db("SELECT UserId, COUNT(*) as Plays, SUM(PlayDuration) as TotalTime FROM PlaybackActivity GROUP BY UserId ORDER BY TotalTime DESC")
         if not res: return {"status": "success", "data": []}
         
@@ -478,13 +469,11 @@ def api_top_users_list():
         
         for row in res:
             uid = row['UserId']
-            # 过滤黑名单用户
             if uid in hidden_users: continue
-            
             u = dict(row)
             u['UserName'] = user_map.get(uid, f"User {str(uid)[:5]}")
             data.append(u)
-            if len(data) >= 5: break # 只取前5
+            if len(data) >= 5: break 
             
         return {"status": "success", "data": data}
     except: return {"status": "success", "data": []}

@@ -33,12 +33,19 @@
 
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
         <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4 flex items-center">
-            <i class="fa-solid fa-image text-purple-500 mr-2"></i> 外部服务
+            <i class="fa-solid fa-image text-purple-500 mr-2"></i> 外部服务 & 网络
         </h3>
-        <div>
-            <label class="block text-xs font-bold text-gray-500 mb-2">TMDB API Key (可选)</label>
-            <input type="text" id="tmdb_api_key" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition" placeholder="留空则使用内置精选壁纸库">
-            <p class="text-[10px] text-gray-400 mt-1">配置后，登录页将显示实时的热门电影海报</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label class="block text-xs font-bold text-gray-500 mb-2">TMDB API Key (可选)</label>
+                <input type="text" id="tmdb_api_key" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition" placeholder="留空则使用内置精选壁纸库">
+                <p class="text-[10px] text-gray-400 mt-1">配置后，登录页将显示实时的热门电影海报</p>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 mb-2">HTTP 代理 (可选)</label>
+                <input type="text" id="proxy_url" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition" placeholder="http://127.0.0.1:7890">
+                <p class="text-[10px] text-gray-400 mt-1">用于加速访问 TMDB，不影响 Emby 局域网连接</p>
+            </div>
         </div>
     </div>
 
@@ -76,6 +83,7 @@
                 document.getElementById('emby_host').value = data.emby_host || '';
                 document.getElementById('emby_api_key').value = data.emby_api_key || '';
                 document.getElementById('tmdb_api_key').value = data.tmdb_api_key || '';
+                document.getElementById('proxy_url').value = data.proxy_url || '';
                 
                 // 初始化黑名单
                 if(data.hidden_users) {
@@ -126,14 +134,11 @@
     }
 
     function toggleUser(uid, isVisible) {
-        // 可见=true -> 从黑名单移除
-        // 不可见=false -> 加入黑名单
         if (isVisible) {
             hiddenUsers.delete(uid);
         } else {
             hiddenUsers.add(uid);
         }
-        // 更新 UI 上的文字
         const span = event.target.parentElement.querySelector('span');
         span.innerText = isVisible ? '显示' : '隐藏';
     }
@@ -148,6 +153,7 @@
             emby_host: document.getElementById('emby_host').value,
             emby_api_key: document.getElementById('emby_api_key').value,
             tmdb_api_key: document.getElementById('tmdb_api_key').value,
+            proxy_url: document.getElementById('proxy_url').value,
             hidden_users: Array.from(hiddenUsers)
         };
 
@@ -161,7 +167,6 @@
             
             if(json.status === 'success') {
                 alert('✅ 配置已保存');
-                // 刷新页面以应用新配置
                 window.location.reload(); 
             } else {
                 alert('❌ 保存失败: ' + json.message);
