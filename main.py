@@ -19,7 +19,7 @@ EMBY_HOST = os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/')
 EMBY_API_KEY = os.getenv("EMBY_API_KEY", "").strip()
 FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
-print(f"--- EmbyPulse V44 (UI Remaster Final) ---")
+print(f"--- EmbyPulse V44 (UI Remaster & Logic Fix) ---")
 print(f"DB Path: {DB_PATH}")
 
 app = FastAPI()
@@ -37,9 +37,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # ================= 数据库工具 =================
+# 优化: 改为 def 避免 async/sync 混用导致的阻塞
 def query_db(query, args=(), one=False):
     if not os.path.exists(DB_PATH): return None
     try:
+        # 增加 timeout 防止高并发下的死锁
         conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=10.0)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
@@ -111,6 +113,7 @@ def api_dashboard(user_id: Optional[str] = None):
         library_stats = {"movie": 0, "series": 0, "episode": 0}
         if EMBY_API_KEY:
             try:
+                # 调用 Emby Items Counts 接口
                 url = f"{EMBY_HOST}/emby/Items/Counts?api_key={EMBY_API_KEY}"
                 res = requests.get(url, timeout=2)
                 if res.status_code == 200:
@@ -121,6 +124,7 @@ def api_dashboard(user_id: Optional[str] = None):
             except Exception as e:
                 print(f"⚠️ Library Stats Error: {e}")
 
+        # 合并数据返回
         return {"status": "success", "data": {**base_stats, "library": library_stats}}
 
     except: return {"status": "error", "data": {"total_plays":0, "library": {}}}
@@ -133,7 +137,7 @@ def api_recent_activity(user_id: Optional[str] = None):
         if user_id and user_id != 'all':
             where += " AND UserId = ?"
             params.append(user_id)
-        # ⚡ 重点: 将 LIMIT 从 200 提升至 1000
+        # ⚡ 重点: 将 LIMIT 从 200 提升至 1000，确保去重后能凑够 20 条
         sql = f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 1000"
         results = query_db(sql, params)
         if not results: return {"status": "success", "data": []}
@@ -165,6 +169,7 @@ def api_live_sessions():
     except: pass
     return {"status": "success", "data": []}
 
+# ================= API: 排行/洞察/图表 =================
 @app.get("/api/stats/top_movies")
 def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by: str = 'count'):
     try:
@@ -216,6 +221,7 @@ def api_user_details(user_id: Optional[str] = None):
         return {"status": "success", "data": {"hourly": hourly_data, "devices": [dict(r) for r in device_res] if device_res else [], "logs": logs_data}}
     except: return {"status": "error", "data": {"hourly": {}, "devices": [], "logs": []}}
 
+# 🔥 核心升级: 支持多维度的动态图表接口
 @app.get("/api/stats/chart")
 @app.get("/api/stats/trend")
 def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'day'):
@@ -226,12 +232,19 @@ def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'day'):
             params.append(user_id)
         
         sql = ""
+        # 1. 按周 (Week): 最近 12 周
         if dimension == 'week':
-            where += " AND DateCreated > date('now', '-84 days')" # 12周
+            where += " AND DateCreated > date('now', '-84 days')" # 12周 = 84天
+            # SQLite 没有直接的 ISO 周函数，用 strftime('%W')
+            # 统计总时长 (Duration)
             sql = f"SELECT strftime('%Y-W%W', DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Label ORDER BY Label"
+        
+        # 2. 按月 (Month): 最近 12 个月
         elif dimension == 'month':
             where += " AND DateCreated > date('now', '-12 months')"
             sql = f"SELECT strftime('%Y-%m', DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Label ORDER BY Label"
+        
+        # 3. 默认按日 (Day): 最近 30 天
         else:
             where += " AND DateCreated > date('now', '-30 days')"
             sql = f"SELECT date(DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Label ORDER BY Label"
@@ -240,12 +253,14 @@ def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'day'):
         data = {}
         if results:
             for r in results: 
+                # 返回的是秒，前端需要转为小时
                 data[r['Label']] = int(r['Duration'])
         return {"status": "success", "data": data}
     except Exception as e:
         print(f"Chart Error: {e}")
         return {"status": "error", "data": {}}
 
+# ================= API: 海报生成 =================
 @app.get("/api/stats/poster_data")
 def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
     try:
@@ -301,6 +316,7 @@ def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
         }
     except Exception as e: return {"status": "error", "message": str(e), "data": {"plays": 0, "hours": 0, "server_plays": 0, "top_list": []}}
 
+# ================= 辅助 API =================
 @app.get("/api/stats/top_users_list")
 def api_top_users_list():
     try:
@@ -355,6 +371,7 @@ def api_badges(user_id: Optional[str] = None):
     try:
         where, params = "WHERE 1=1", []
         if user_id and user_id != 'all': where += " AND UserId = ?"; params.append(user_id)
+        
         badges = []
         
         night_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND strftime('%H', DateCreated) BETWEEN '02' AND '05'", params)
