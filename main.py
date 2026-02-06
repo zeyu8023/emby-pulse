@@ -84,7 +84,7 @@ TMDB_FALLBACK_POOL = [
     "https://image.tmdb.org/t/p/original/lzWHmYdfeFiMIY4JaMmtR7GEli3.jpg",
 ]
 
-print(f"--- EmbyPulse V55 (Notification Fix) ---")
+print(f"--- EmbyPulse V59 (Added User Management) ---")
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=86400*7)
@@ -112,17 +112,58 @@ class BotSettingsModel(BaseModel):
     enable_bot: bool
     enable_notify: bool
 
+# 🔥 新增：用户管理模型
+class UserUpdateModel(BaseModel):
+    user_id: str
+    password: Optional[str] = None
+    is_disabled: Optional[bool] = None
+    expire_date: Optional[str] = None # YYYY-MM-DD
+
+class NewUserModel(BaseModel):
+    name: str
+    password: str
+    expire_date: Optional[str] = None
+
 # ================= 辅助函数 =================
+
+# 🔥 新增：数据库初始化 (创建用户元数据表)
+def init_db():
+    if not os.path.exists(DB_PATH): return
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS users_meta (
+                        user_id TEXT PRIMARY KEY,
+                        expire_date TEXT,
+                        note TEXT,
+                        created_at TEXT
+                    )''')
+        conn.commit()
+        conn.close()
+    except Exception as e: print(f"❌ DB Init Error: {e}")
+
+init_db()
+
+# 🔥 修改：支持读写操作 (去掉 mode=ro)
 def query_db(query, args=(), one=False):
     if not os.path.exists(DB_PATH): return None
     try:
-        conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=10.0)
+        # 改为标准连接，支持写入
+        conn = sqlite3.connect(DB_PATH, timeout=10.0)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute(query, args)
-        rv = cur.fetchall()
-        conn.close()
-        return (rv[0] if rv else None) if one else rv
+        
+        # 如果是查询
+        if query.strip().upper().startswith("SELECT"):
+            rv = cur.fetchall()
+            conn.close()
+            return (rv[0] if rv else None) if one else rv
+        else:
+            # 如果是增删改
+            conn.commit()
+            conn.close()
+            return True
     except Exception as e: print(f"❌ SQL Error: {e}"); return None
 
 def get_base_filter(user_id_filter: Optional[str]):
@@ -155,8 +196,10 @@ class TelegramBot:
         self.running = False
         self.poll_thread = None
         self.monitor_thread = None
+        self.schedule_thread = None # 🔥 新增调度线程
         self.offset = 0
-        self.active_sessions = {} # 缓存完整会话信息
+        self.active_sessions = {}
+        self.last_check_min = -1
         
     def start(self):
         if self.running: return
@@ -173,6 +216,10 @@ class TelegramBot:
         if cfg.get("enable_notify"):
             self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
             self.monitor_thread.start()
+        
+        # 🔥 启动调度器
+        self.schedule_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
+        self.schedule_thread.start()
             
         print("🤖 Telegram Bot & Monitor Started!")
 
@@ -184,7 +231,6 @@ class TelegramBot:
         proxy = cfg.get("proxy_url")
         return {"http": proxy, "https": proxy} if proxy else None
 
-    # 🔥 IP 归属地查询
     def _get_location(self, ip):
         if not ip: return "未知"
         if ip.startswith("192.168.") or ip.startswith("10.") or ip.startswith("127.") or ip == "::1":
@@ -195,14 +241,10 @@ class TelegramBot:
             if res.status_code == 200:
                 data = res.json()
                 if data.get("status") == "success":
-                    country = data.get("country", "")
-                    region = data.get("regionName", "")
-                    city = data.get("city", "")
-                    return f"{country} {region} {city}".strip()
+                    return f"{data.get('country','')} {data.get('city','')}".strip()
         except: pass
         return "未知位置"
 
-    # 注册菜单
     def _set_commands(self):
         token = cfg.get("tg_bot_token")
         if not token: return
@@ -219,7 +261,6 @@ class TelegramBot:
             requests.post(url, json={"commands": commands}, proxies=self._get_proxies(), timeout=10)
         except: pass
 
-    # 下载图片
     def _download_emby_image(self, item_id, img_type='Primary'):
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         if not key or not host: return None
@@ -230,7 +271,6 @@ class TelegramBot:
         except: pass
         return None
 
-    # 发送图片
     def send_photo(self, chat_id, photo_io, caption, parse_mode="HTML"):
         token = cfg.get("tg_bot_token")
         if not token: return
@@ -241,14 +281,13 @@ class TelegramBot:
                 data["photo"] = photo_io
                 requests.post(url, data=data, proxies=self._get_proxies(), timeout=20)
             else:
-                photo_io.seek(0) # 确保指针在开头
+                photo_io.seek(0) 
                 files = {"photo": ("image.jpg", photo_io, "image/jpeg")}
                 requests.post(url, data=data, files=files, proxies=self._get_proxies(), timeout=20)
         except Exception as e: 
             print(f"Bot SendPhoto Error: {e}")
             self.send_message(chat_id, caption)
 
-    # 发送文字
     def send_message(self, chat_id, text, parse_mode="HTML"):
         token = cfg.get("tg_bot_token")
         if not token: return
@@ -257,7 +296,6 @@ class TelegramBot:
             requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode}, proxies=self._get_proxies(), timeout=10)
         except Exception as e: print(f"Bot Send Error: {e}")
 
-    # --- 1. 指令轮询 ---
     def _polling_loop(self):
         token = cfg.get("tg_bot_token")
         admin_id = str(cfg.get("tg_chat_id"))
@@ -291,53 +329,33 @@ class TelegramBot:
         elif text.startswith("/history"): self._cmd_history(chat_id, text[9:].strip())
         elif text.startswith("/search"): self._cmd_search(chat_id, text[7:].strip())
 
-    # --- 2. 增强版监控 (Monitor) ---
     def _monitor_loop(self):
         admin_id = str(cfg.get("tg_chat_id"))
         if not admin_id: return
-        
         while self.running and cfg.get("enable_notify"):
             try:
                 key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
                 if not key or not host: 
                     time.sleep(30); continue
-
                 res = requests.get(f"{host}/emby/Sessions?api_key={key}", timeout=5)
                 if res.status_code == 200:
                     current_active_ids = []
-                    
                     for s in res.json():
                         if s.get("NowPlayingItem"):
-                            sid = s.get("Id")
-                            current_active_ids.append(sid)
-                            
-                            item = s["NowPlayingItem"]
-                            item_id = item.get("Id")
-                            name = item.get("Name", "未知")
-                            series = item.get("SeriesName")
-                            
-                            season_num = item.get("ParentIndexNumber")
-                            ep_num = item.get("IndexNumber")
-                            media_type = "🎬 电影"
-                            title_fmt = name
+                            sid = s.get("Id"); current_active_ids.append(sid)
+                            item = s["NowPlayingItem"]; item_id = item.get("Id")
+                            name = item.get("Name", "未知"); series = item.get("SeriesName")
+                            season_num = item.get("ParentIndexNumber"); ep_num = item.get("IndexNumber")
+                            media_type = "🎬 电影"; title_fmt = name
                             if series:
                                 media_type = "📚 剧集"
-                                if season_num is not None and ep_num is not None:
-                                    s_str = f"S{season_num:02d}E{ep_num:02d}"
-                                    title_fmt = f"{series} {s_str} 第 {ep_num} 集"
-                                else:
-                                    title_fmt = f"{series} - {name}"
-                            
+                                if season_num is not None and ep_num is not None: title_fmt = f"{series} S{season_num:02d}E{ep_num:02d} 第 {ep_num} 集"
+                                else: title_fmt = f"{series} - {name}"
                             ticks = s.get("PlayState", {}).get("PositionTicks", 0)
                             total = item.get("RunTimeTicks", 1)
-                            pct = (ticks / total) * 100 if total > 0 else 0
-                            pct_str = f"{pct:.2f}%"
-                            
+                            pct = (ticks / total) * 100 if total > 0 else 0; pct_str = f"{pct:.2f}%"
                             user = s.get("UserName", "User")
-                            client = s.get("Client", "Unknown")
-                            device = s.get("DeviceName", "Unknown")
-                            device_str = f"{client} {device}"
-                            
+                            client = s.get("Client", "Unknown"); device = s.get("DeviceName", "Unknown"); device_str = f"{client} {device}"
                             remote = s.get("RemoteEndPoint", "Unknown")
                             ip = remote.split(":")[0] if remote else "Unknown"
                             if "ffff" in ip: 
@@ -347,61 +365,66 @@ class TelegramBot:
                             if sid not in self.active_sessions:
                                 location = self._get_location(ip)
                                 now_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                
-                                session_data = {
-                                    "title": title_fmt, "type": media_type,
-                                    "user": user, "ip": ip, "location": location,
-                                    "device": device_str, "start_time": now_time,
-                                    "item_id": item_id, "pct": pct_str
-                                }
+                                session_data = {"title": title_fmt, "type": media_type, "user": user, "ip": ip, "location": location, "device": device_str, "start_time": now_time, "item_id": item_id, "pct": pct_str}
                                 self.active_sessions[sid] = session_data
-                                
-                                msg = (
-                                    f"▶️ <b>【{user}】开始播放</b>\n"
-                                    f"📺 <b>{title_fmt}</b>\n"
-                                    f"──────────────\n"
-                                    f"📚 类型：{media_type}\n"
-                                    f"🔄 进度：{pct_str}\n"
-                                    f"🌐 地址：{ip} ({location})\n"
-                                    f"📱 设备：{device_str}\n"
-                                    f"🕒 时间：{now_time}"
-                                )
+                                msg = (f"▶️ <b>【{user}】开始播放</b>\n📺 <b>{title_fmt}</b>\n──────────────\n📚 类型：{media_type}\n🔄 进度：{pct_str}\n🌐 地址：{ip} ({location})\n📱 设备：{device_str}\n🕒 时间：{now_time}")
                                 img = self._download_emby_image(item_id, 'Backdrop') or self._download_emby_image(item_id, 'Primary')
                                 if img: self.send_photo(admin_id, img, msg)
                                 else: self.send_message(admin_id, msg)
-                            
-                            else:
-                                self.active_sessions[sid]["pct"] = pct_str
+                            else: self.active_sessions[sid]["pct"] = pct_str
 
-                    # 3. 检查停止 (在缓存中但不在当前列表)
                     stopped_sids = [sid for sid in self.active_sessions if sid not in current_active_ids]
-                    
                     for sid in stopped_sids:
                         info = self.active_sessions[sid]
                         stop_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        
-                        msg = (
-                            f"⏹️ <b>【{info['user']}】停止播放</b>\n"
-                            f"📺 <b>{info['title']}</b>\n"
-                            f"──────────────\n"
-                            f"📚 类型：{info['type']}\n"
-                            f"🔄 进度：{info['pct']}\n"
-                            f"🌐 地址：{info['ip']} ({info['location']})\n"
-                            f"📱 设备：{info['device']}\n"
-                            f"🕒 时间：{stop_time}"
-                        )
-                        # 🔥 停止播放也发送海报 (修复点)
+                        msg = (f"⏹️ <b>【{info['user']}】停止播放</b>\n📺 <b>{info['title']}</b>\n──────────────\n📚 类型：{info['type']}\n🔄 进度：{info['pct']}\n🌐 地址：{info['ip']} ({info['location']})\n📱 设备：{info['device']}\n🕒 时间：{stop_time}")
                         img = self._download_emby_image(info['item_id'], 'Backdrop') or self._download_emby_image(info['item_id'], 'Primary')
                         if img: self.send_photo(admin_id, img, msg)
                         else: self.send_message(admin_id, msg)
-                        
                         del self.active_sessions[sid]
-                
                 time.sleep(10)
             except Exception as e: time.sleep(10)
 
-    # --- 指令逻辑 ---
-    
+    # 🔥 新增：调度器 (用户有效期检查)
+    def _scheduler_loop(self):
+        print("🤖 Scheduler Started")
+        while self.running:
+            try:
+                now = datetime.datetime.now()
+                if now.minute != self.last_check_min:
+                    self.last_check_min = now.minute
+                    # 每天 09:00 检查用户过期
+                    if now.hour == 9 and now.minute == 0:
+                        self._check_user_expiration()
+                time.sleep(5)
+            except: time.sleep(60)
+
+    # 🔥 新增：过期检查逻辑
+    def _check_user_expiration(self):
+        print("🔍 Checking user expirations...")
+        users = query_db("SELECT user_id, expire_date FROM users_meta WHERE expire_date IS NOT NULL AND expire_date != ''")
+        if not users: return
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
+        key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+        admin_id = str(cfg.get("tg_chat_id"))
+        for u in users:
+            if u['expire_date'] < today:
+                user_id = u['user_id']
+                try:
+                    res = requests.get(f"{host}/emby/Users/{user_id}?api_key={key}")
+                    if res.status_code == 200:
+                        user_data = res.json()
+                        policy = user_data.get('Policy', {})
+                        if not policy.get('IsDisabled'):
+                            policy['IsDisabled'] = True
+                            update_res = requests.post(f"{host}/emby/Users/{user_id}/Policy?api_key={key}", json=policy)
+                            if update_res.status_code == 204:
+                                name = user_data.get('Name')
+                                print(f"🚫 User {name} expired.")
+                                if admin_id: self.send_message(admin_id, f"🚫 <b>账号过期通知</b>\n用户：{name}\n到期日：{u['expire_date']}\n状态：已自动禁用")
+                except: pass
+
+    # --- 指令实现 ---
     def _cmd_stats(self, chat_id):
         where, params = get_base_filter('all')
         total_plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where}", params)[0]['c']
@@ -410,7 +433,6 @@ class TelegramBot:
         today_dur = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {today_where}", params)[0]['c'] or 0
         today_hours = round(today_dur / 3600, 1)
         active_users = query_db(f"SELECT COUNT(DISTINCT UserId) as c FROM PlaybackActivity {today_where}", params)[0]['c']
-        
         top_user_sql = f"SELECT UserId, SUM(PlayDuration) as D FROM PlaybackActivity {today_where} GROUP BY UserId ORDER BY D DESC LIMIT 1"
         top_user_res = query_db(top_user_sql, params)
         user_map = get_user_map()
@@ -419,7 +441,6 @@ class TelegramBot:
             u_name = user_map.get(top_user_res[0]['UserId'], "User")
             u_time = round(top_user_res[0]['D'] / 3600, 1)
             top_user_str = f"{u_name} ({u_time}h)"
-
         recent_sql = f"SELECT DateCreated, UserId, ItemName, PlayDuration FROM PlaybackActivity {today_where} ORDER BY DateCreated DESC LIMIT 10"
         recent_rows = query_db(recent_sql, params)
         detail_str = ""
@@ -430,7 +451,6 @@ class TelegramBot:
                 dur = round((r['PlayDuration'] or 0) / 60)
                 detail_str += f"<code>{t}</code> | <b>{u}</b> | ⏳{dur}m\n└ {r['ItemName']}\n"
         else: detail_str = "<i>(今日暂无播放记录)</i>"
-
         lib_str = "..."
         try:
             key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
@@ -438,22 +458,8 @@ class TelegramBot:
             d = res.json()
             lib_str = f"🎬 {d.get('MovieCount')} | 📺 {d.get('SeriesCount')} | 💿 {d.get('EpisodeCount')}"
         except: pass
-        
         today_date = datetime.datetime.now().strftime("%Y-%m-%d")
-        caption = (
-            f"📊 <b>EmbyPulse 每日速报</b>\n"
-            f"📅 <code>{today_date}</code>\n"
-            f"───────────────\n"
-            f"<b>📈 今日大盘</b>\n"
-            f"▶️ 播放次数: <b>{today_plays}</b>\n"
-            f"⏱️ 播放时长: <b>{today_hours}</b> 小时\n"
-            f"👥 活跃人数: <b>{active_users}</b>\n"
-            f"🏆 今日榜首: <b>{top_user_str}</b>\n"
-            f"📦 媒体库存: {lib_str}\n"
-            f"───────────────\n"
-            f"<b>📝 今日流水 (Top 10)</b>\n"
-            f"{detail_str}"
-        )
+        caption = (f"📊 <b>EmbyPulse 每日速报</b>\n📅 <code>{today_date}</code>\n───────────────\n<b>📈 今日大盘</b>\n▶️ 播放次数: <b>{today_plays}</b>\n⏱️ 播放时长: <b>{today_hours}</b> 小时\n👥 活跃人数: <b>{active_users}</b>\n🏆 今日榜首: <b>{top_user_str}</b>\n📦 媒体库存: {lib_str}\n───────────────\n<b>📝 今日流水 (Top 10)</b>\n{detail_str}")
         self.send_photo(chat_id, REPORT_COVER_URL, caption)
 
     def _cmd_recent(self, chat_id):
@@ -476,7 +482,6 @@ class TelegramBot:
         month_sql = f"SELECT UserId, SUM(PlayDuration) as D FROM PlaybackActivity {where} AND DateCreated > date('now', '-30 days') GROUP BY UserId ORDER BY D DESC LIMIT 3"
         month_rows = query_db(month_sql, params)
         user_map = get_user_map()
-        
         def format_rank(rows):
             if not rows: return "<i>无数据</i>"
             res = ""
@@ -486,7 +491,6 @@ class TelegramBot:
                 h = round(r['D']/3600, 1)
                 res += f"{medals[i]} <b>{u}</b> — <code>{h}h</code>\n"
             return res
-
         msg = f"🏆 <b>观影排行榜</b>\n\n<b>📅 本周 Top 3</b>\n{format_rank(week_rows)}\n<b>🗓 本月 Top 3</b>\n{format_rank(month_rows)}"
         self.send_message(chat_id, msg)
 
@@ -496,24 +500,17 @@ class TelegramBot:
             res = requests.get(f"{host}/emby/Sessions?api_key={key}", timeout=5)
             sessions = [s for s in res.json() if s.get("NowPlayingItem")]
             if not sessions: return self.send_message(chat_id, "💤 当前服务器空闲")
-            
             for s in sessions:
-                item = s["NowPlayingItem"]
-                item_id = item.get("Id")
+                item = s["NowPlayingItem"]; item_id = item.get("Id")
                 title = item.get("Name")
                 if item.get("SeriesName"): title = f"{item.get('SeriesName')} - {title}"
-                
                 ticks = s.get("PlayState", {}).get("PositionTicks", 0)
                 total = item.get("RunTimeTicks", 1)
                 pct = int((ticks / total) * 100) if total > 0 else 0
                 bar = "▓" * (pct // 10) + "░" * (10 - (pct // 10))
-                
                 transcode = "🔥转码" if s.get("PlayState", {}).get("IsTranscoding") else "⚡直通"
-                device = s.get("DeviceName")
-                user = s.get("UserName")
-                
+                device = s.get("DeviceName"); user = s.get("UserName")
                 caption = f"🟢 <b>正在播放</b>\n\n📺 <b>{title}</b>\n👤 <b>{user}</b> @ {device}\n[{bar}] {pct}%\n⚙️ {transcode}"
-                
                 img_data = self._download_emby_image(item_id, 'Backdrop')
                 if img_data: self.send_photo(chat_id, img_data, caption)
                 else: self.send_message(chat_id, caption)
@@ -535,16 +532,13 @@ class TelegramBot:
         for uid, name in user_map.items():
             if name.lower() == username.lower(): target_id = uid; break
         if not target_id: return self.send_message(chat_id, f"🚫 找不到用户: {username}")
-        
         where, params = get_base_filter('all') 
         sql = f"SELECT DateCreated, ItemName, PlayDuration FROM PlaybackActivity {where} AND UserId = ? ORDER BY DateCreated DESC LIMIT 10"
         rows = query_db(sql, params + [target_id])
         if not rows: return self.send_message(chat_id, f"📭 {username} 暂无记录")
-        
         msg = f"👤 <b>{username} 的最近记录</b>\n───────────────\n"
         for r in rows:
-            t = r['DateCreated'].split(' ')[0][5:]
-            dur = round((r['PlayDuration'] or 0) / 60)
+            t = r['DateCreated'].split(' ')[0][5:]; dur = round((r['PlayDuration'] or 0) / 60)
             msg += f"• {t} | {dur}m | {r['ItemName']}\n"
         self.send_message(chat_id, msg)
 
@@ -557,8 +551,7 @@ class TelegramBot:
         if not rows: return self.send_message(chat_id, f"🔍 未找到关于 '{keyword}' 的记录")
         msg = f"🔍 <b>搜索: {keyword}</b>\n\n"
         for r in rows:
-            u = user_map.get(r['UserId'], "User")
-            d = r['DateCreated'].split(' ')[0]
+            u = user_map.get(r['UserId'], "User"); d = r['DateCreated'].split(' ')[0]
             msg += f"• {d} <b>{u}</b>\n  {r['ItemName']}\n"
         self.send_message(chat_id, msg)
 
@@ -610,6 +603,81 @@ def api_test_bot(request: Request):
         if res.status_code == 200: return {"status": "success", "message": "测试消息已发送"}
         else: return {"status": "error", "message": f"API Error: {res.text}"}
     except Exception as e: return {"status": "error", "message": f"Connect Error: {str(e)}"}
+
+# ================= 🚀 用户管理路由 (新增) =================
+@app.get("/users_manage")
+async def page_users_manage(request: Request):
+    if not request.session.get("user"): return RedirectResponse("/login")
+    return templates.TemplateResponse("users.html", {"request": request, "active_page": "users_manage", "user": request.session.get("user")})
+
+@app.get("/api/manage/users")
+def api_manage_users(request: Request):
+    if not request.session.get("user"): return {"status": "error"}
+    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+    try:
+        res = requests.get(f"{host}/emby/Users?api_key={key}", timeout=5)
+        if res.status_code != 200: return {"status": "error", "message": "Emby API Error"}
+        emby_users = res.json()
+        
+        meta_rows = query_db("SELECT * FROM users_meta")
+        meta_map = {r['user_id']: dict(r) for r in meta_rows} if meta_rows else {}
+        
+        final_list = []
+        for u in emby_users:
+            uid = u['Id']
+            meta = meta_map.get(uid, {})
+            policy = u.get('Policy', {})
+            final_list.append({
+                "Id": uid, "Name": u['Name'], "LastLoginDate": u.get('LastLoginDate'),
+                "IsDisabled": policy.get('IsDisabled', False), "IsAdmin": policy.get('IsAdministrator', False),
+                "ExpireDate": meta.get('expire_date'), "Note": meta.get('note')
+            })
+        return {"status": "success", "data": final_list}
+    except Exception as e: return {"status": "error", "message": str(e)}
+
+@app.post("/api/manage/user/update")
+def api_manage_user_update(data: UserUpdateModel, request: Request):
+    if not request.session.get("user"): return {"status": "error"}
+    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+    try:
+        if data.expire_date is not None:
+            exist = query_db("SELECT 1 FROM users_meta WHERE user_id = ?", (data.user_id,), one=True)
+            if exist: query_db("UPDATE users_meta SET expire_date = ? WHERE user_id = ?", (data.expire_date, data.user_id))
+            else: query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (data.user_id, data.expire_date, datetime.datetime.now().isoformat()))
+        if data.password:
+            requests.post(f"{host}/emby/Users/{data.user_id}/Password?api_key={key}", json={"NewPassword": data.password, "ResetPassword": True})
+        if data.is_disabled is not None:
+            p_res = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
+            if p_res.status_code == 200:
+                policy = p_res.json().get('Policy', {}); policy['IsDisabled'] = data.is_disabled
+                requests.post(f"{host}/emby/Users/{data.user_id}/Policy?api_key={key}", json=policy)
+        return {"status": "success", "message": "更新成功"}
+    except Exception as e: return {"status": "error", "message": str(e)}
+
+@app.post("/api/manage/user/new")
+def api_manage_user_new(data: NewUserModel, request: Request):
+    if not request.session.get("user"): return {"status": "error"}
+    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+    try:
+        res = requests.post(f"{host}/emby/Users/New?api_key={key}", json={"Name": data.name})
+        if res.status_code != 200: return {"status": "error", "message": f"创建失败: {res.text}"}
+        new_id = res.json()['Id']
+        if data.password: requests.post(f"{host}/emby/Users/{new_id}/Password?api_key={key}", json={"NewPassword": data.password, "ResetPassword": True})
+        if data.expire_date: query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (new_id, data.expire_date, datetime.datetime.now().isoformat()))
+        return {"status": "success", "message": "用户创建成功"}
+    except Exception as e: return {"status": "error", "message": str(e)}
+
+@app.delete("/api/manage/user/{user_id}")
+def api_manage_user_delete(user_id: str, request: Request):
+    if not request.session.get("user"): return {"status": "error"}
+    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+    try:
+        res = requests.delete(f"{host}/emby/Users/{user_id}?api_key={key}")
+        if res.status_code in [200, 204]:
+            query_db("DELETE FROM users_meta WHERE user_id = ?", (user_id,))
+            return {"status": "success", "message": "用户已删除"}
+        return {"status": "error", "message": "删除失败"}
+    except Exception as e: return {"status": "error", "message": str(e)}
 
 # ================= 原有 API 保持不变 =================
 @app.get("/login")

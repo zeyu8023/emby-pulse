@@ -28,11 +28,9 @@
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;500;700;900&display=swap');
         body { font-family: 'Noto Sans SC', sans-serif; }
         
-        /* 导航高亮适配 */
         .nav-item.active { background-color: #f0fdf4; color: #15803d; border-right: 3px solid #15803d; font-weight: 700; }
         html.dark .nav-item.active { background-color: rgba(21, 128, 61, 0.2); color: #4ade80; border-right-color: #4ade80; }
         
-        /* 滚动条暗色适配 */
         html.dark ::-webkit-scrollbar-track { background: #1f2937; }
         html.dark ::-webkit-scrollbar-thumb { background: #4b5563; }
         
@@ -71,6 +69,9 @@
             </a>
             <a href="/bot" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'bot' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}">
                 <i class="fa-solid fa-robot w-6"></i> <span class="ml-2">机器人助手</span>
+            </a>
+            <a href="/users_manage" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'users_manage' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}">
+                <i class="fa-solid fa-users-gear w-6"></i> <span class="ml-2">用户管理</span>
             </a>
             <a href="/settings" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'settings' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}">
                 <i class="fa-solid fa-gear w-6"></i> <span class="ml-2">系统设置</span>
@@ -118,6 +119,7 @@
             <a href="/details" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'details' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-magnifying-glass-chart w-6"></i> <span class="ml-2">数据洞察</span></a>
             <a href="/report" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'report' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-wand-magic-sparkles w-6"></i> <span class="ml-2">映迹工坊</span></a>
             <a href="/bot" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'bot' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-robot w-6"></i> <span class="ml-2">机器人助手</span></a>
+            <a href="/users_manage" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'users_manage' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-users-gear w-6"></i> <span class="ml-2">用户管理</span></a>
             <a href="/settings" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'settings' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-gear w-6"></i> <span class="ml-2">系统设置</span></a>
         </nav>
         <div class="p-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/30 flex gap-2">

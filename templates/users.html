@@ -1,0 +1,222 @@
+{% extends "layout.html" %}
+{% block title %}用户管理 - EmbyPulse{% endblock %}
+{% block head %}
+<style>
+    .status-badge { @apply px-2 py-0.5 rounded-full text-xs font-bold; }
+    .status-active { @apply bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400; }
+    .status-disabled { @apply bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400; }
+    .status-expired { @apply bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="max-w-7xl mx-auto w-full px-4 md:px-8 py-8 pb-24">
+    
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-2xl font-black text-gray-900 dark:text-white">用户管理</h1>
+            <p class="text-xs text-gray-500 mt-1">管理 Emby 账号与有效期</p>
+        </div>
+        <button onclick="openModal('new')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-blue-200 dark:shadow-none transition flex items-center">
+            <i class="fa-solid fa-user-plus mr-2"></i> 新增用户
+        </button>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                <thead class="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-700/50">
+                    <tr>
+                        <th class="px-6 py-3">用户</th>
+                        <th class="px-6 py-3">最后活动</th>
+                        <th class="px-6 py-3">有效期至</th>
+                        <th class="px-6 py-3">状态</th>
+                        <th class="px-6 py-3 text-right">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="user-list-body">
+                    </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="modal-overlay" class="fixed inset-0 bg-black/50 z-[60] hidden backdrop-blur-sm transition-opacity" onclick="closeModal()"></div>
+<div id="user-modal" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-2xl z-[70] hidden p-6 transition-all">
+    <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4" id="modal-title">编辑用户</h3>
+    
+    <input type="hidden" id="edit-user-id">
+    
+    <div class="space-y-4">
+        <div id="name-field">
+            <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">用户名</label>
+            <input type="text" id="edit-name" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+        
+        <div>
+            <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">密码 (留空则不修改)</label>
+            <input type="password" id="edit-password" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="******">
+        </div>
+
+        <div>
+            <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">账号有效期</label>
+            <input type="date" id="edit-expire" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+            <p class="text-[10px] text-gray-400 mt-1">留空代表永久有效。过期后账号将被自动禁用。</p>
+        </div>
+
+        <div class="flex items-center justify-between pt-2" id="disable-field">
+            <span class="text-sm font-bold text-gray-700 dark:text-gray-300">禁用账号</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="edit-disabled" class="sr-only peer">
+                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
+            </label>
+        </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+        <button onclick="closeModal()" class="flex-1 py-2 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 text-sm font-bold hover:bg-gray-50 dark:hover:bg-gray-700">取消</button>
+        <button onclick="saveUser()" class="flex-1 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-none">保存</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentMode = 'new'; // 'new' or 'edit'
+
+    async function init() {
+        loadList();
+    }
+
+    async function loadList() {
+        const tbody = document.getElementById('user-list-body');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8"><i class="fa-solid fa-circle-notch fa-spin text-gray-400"></i></td></tr>';
+        
+        try {
+            const res = await fetch('/api/manage/users');
+            const json = await res.json();
+            
+            if(json.status === 'success') {
+                let html = '';
+                json.data.forEach(u => {
+                    const statusClass = u.IsDisabled ? 'status-disabled' : 'status-active';
+                    const statusText = u.IsDisabled ? '已禁用' : '正常';
+                    const expireText = u.ExpireDate || '永久';
+                    const lastActive = u.LastLoginDate ? new Date(u.LastLoginDate).toLocaleDateString() : '从未';
+                    
+                    html += `
+                    <tr class="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
+                        <td class="px-6 py-4 font-bold text-gray-900 dark:text-white flex items-center">
+                            <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center mr-3 text-xs">
+                                ${u.Name[0].toUpperCase()}
+                            </div>
+                            <div>
+                                ${u.Name}
+                                ${u.IsAdmin ? '<span class="ml-2 text-[10px] bg-yellow-100 text-yellow-700 px-1.5 rounded border border-yellow-200">ADMIN</span>' : ''}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">${lastActive}</td>
+                        <td class="px-6 py-4 font-mono text-xs">${expireText}</td>
+                        <td class="px-6 py-4"><span class="${statusClass}">${statusText}</span></td>
+                        <td class="px-6 py-4 text-right">
+                            <button onclick="editUser('${u.Id}', '${u.Name}', '${u.ExpireDate || ''}', ${u.IsDisabled})" class="text-blue-500 hover:text-blue-700 mr-3"><i class="fa-solid fa-pen-to-square"></i></button>
+                            <button onclick="deleteUser('${u.Id}', '${u.Name}')" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button>
+                        </td>
+                    </tr>`;
+                });
+                tbody.innerHTML = html;
+            }
+        } catch(e) { tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-red-500">加载失败: ${e}</td></tr>`; }
+    }
+
+    function openModal(mode) {
+        currentMode = mode;
+        document.getElementById('modal-overlay').classList.remove('hidden');
+        document.getElementById('user-modal').classList.remove('hidden');
+        
+        if (mode === 'new') {
+            document.getElementById('modal-title').innerText = '新增用户';
+            document.getElementById('name-field').classList.remove('hidden');
+            document.getElementById('disable-field').classList.add('hidden');
+            document.getElementById('edit-name').value = '';
+            document.getElementById('edit-password').value = '';
+            document.getElementById('edit-expire').value = '';
+        }
+    }
+
+    function editUser(id, name, expire, disabled) {
+        currentMode = 'edit';
+        document.getElementById('modal-overlay').classList.remove('hidden');
+        document.getElementById('user-modal').classList.remove('hidden');
+        
+        document.getElementById('modal-title').innerText = `编辑用户: ${name}`;
+        document.getElementById('name-field').classList.add('hidden'); // 编辑时不改名
+        document.getElementById('disable-field').classList.remove('hidden');
+        
+        document.getElementById('edit-user-id').value = id;
+        document.getElementById('edit-password').value = '';
+        document.getElementById('edit-expire').value = expire;
+        document.getElementById('edit-disabled').checked = disabled;
+    }
+
+    function closeModal() {
+        document.getElementById('modal-overlay').classList.add('hidden');
+        document.getElementById('user-modal').classList.add('hidden');
+    }
+
+    async function saveUser() {
+        const pwd = document.getElementById('edit-password').value;
+        const expire = document.getElementById('edit-expire').value || null;
+        
+        let url = '', body = {};
+        
+        if (currentMode === 'new') {
+            url = '/api/manage/user/new';
+            body = {
+                name: document.getElementById('edit-name').value,
+                password: pwd,
+                expire_date: expire
+            };
+            if(!body.name) return alert('请输入用户名');
+        } else {
+            url = '/api/manage/user/update';
+            body = {
+                user_id: document.getElementById('edit-user-id').value,
+                password: pwd || null, // 空则不发
+                expire_date: expire,
+                is_disabled: document.getElementById('edit-disabled').checked
+            };
+        }
+
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            const json = await res.json();
+            if(json.status === 'success') {
+                closeModal();
+                loadList();
+                alert(json.message);
+            } else {
+                alert('操作失败: ' + json.message);
+            }
+        } catch(e) { alert('网络错误'); }
+    }
+
+    async function deleteUser(id, name) {
+        if(!confirm(`⚠️ 危险操作！\n\n确定要永久删除用户 [${name}] 吗？\n此操作不可恢复！`)) return;
+        try {
+            const res = await fetch(`/api/manage/user/${id}`, { method: 'DELETE' });
+            const json = await res.json();
+            if(json.status === 'success') {
+                loadList();
+            } else {
+                alert('删除失败: ' + json.message);
+            }
+        } catch(e) { alert('网络错误'); }
+    }
+
+    init();
+</script>
+{% endblock %}
