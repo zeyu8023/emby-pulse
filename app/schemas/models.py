@@ -17,6 +17,7 @@ class BotSettingsModel(BaseModel):
     tg_chat_id: str
     enable_bot: bool
     enable_notify: bool
+    enable_library_notify: Optional[bool] = False # 🔥 新增
 
 class PushRequestModel(BaseModel):
     user_id: str

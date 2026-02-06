@@ -160,7 +160,7 @@ class TelegramBot:
 
     # 🔥 新增：入库通知推送逻辑
     def push_new_media(self, item_id):
-        if not cfg.get("enable_notify") or not cfg.get("tg_chat_id"): return
+        if not cfg.get("enable_library_notify") or not cfg.get("tg_chat_id"): return
         
         chat_id = str(cfg.get("tg_chat_id"))
         host = cfg.get("emby_host")

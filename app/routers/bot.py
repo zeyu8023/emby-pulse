@@ -16,7 +16,10 @@ def api_get_bot_settings(request: Request):
 def api_save_bot_settings(data: BotSettingsModel, request: Request):
     if not request.session.get("user"): return {"status": "error"}
     cfg.set("tg_bot_token", data.tg_bot_token); cfg.set("tg_chat_id", data.tg_chat_id)
-    cfg.set("enable_bot", data.enable_bot); cfg.set("enable_notify", data.enable_notify)
+    cfg.set("enable_bot", data.enable_bot)
+    cfg.set("enable_notify", data.enable_notify)
+    cfg.set("enable_library_notify", data.enable_library_notify) # 🔥 新增
+    
     bot.stop()
     if data.enable_bot: threading.Timer(1.0, bot.start).start()
     return {"status": "success", "message": "配置已保存"}

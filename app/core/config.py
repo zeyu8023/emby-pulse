@@ -56,6 +56,7 @@ DEFAULT_CONFIG = {
     "tg_chat_id": "",     
     "enable_bot": False,  
     "enable_notify": False,
+    "enable_library_notify": False,  # 🔥 新增：入库通知开关
     "scheduled_tasks": []
 }
 
@@ -94,7 +95,6 @@ class ConfigManager:
 cfg = ConfigManager()
 templates = Jinja2Templates(directory="templates")
 
-# 🔥 修复：补全缺失的常量 (这三个必须有)
 SECRET_KEY = os.getenv("SECRET_KEY", "embypulse_secret_key_2026")
 PORT = 10307
 DB_PATH = os.getenv("DB_PATH", "/emby-data/playback_reporting.db")

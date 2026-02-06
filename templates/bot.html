@@ -54,7 +54,7 @@
                 </label>
             </div>
 
-            <div class="flex items-center justify-between py-3 pt-4">
+            <div class="flex items-center justify-between py-3 border-b border-gray-50 dark:border-gray-700/50">
                 <div>
                     <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200">播放状态通知</h4>
                     <p class="text-xs text-gray-400 mt-0.5">有人开始/停止播放时发送消息</p>
@@ -62,6 +62,17 @@
                 <label class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" id="enable_notify" class="sr-only peer">
                     <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                </label>
+            </div>
+
+            <div class="flex items-center justify-between py-3 pt-4">
+                <div>
+                    <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200">新资源入库通知</h4>
+                    <p class="text-xs text-gray-400 mt-0.5">Emby 添加新电影/剧集时发送海报</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="enable_library_notify" class="sr-only peer" onchange="checkWebhookTip(this)">
+                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
                 </label>
             </div>
         </div>
@@ -106,8 +117,19 @@
                 document.getElementById('tg_chat_id').value = d.tg_chat_id || '';
                 document.getElementById('enable_bot').checked = d.enable_bot || false;
                 document.getElementById('enable_notify').checked = d.enable_notify || false;
+                // 🔥 新增：加载入库通知状态
+                document.getElementById('enable_library_notify').checked = d.enable_library_notify || false;
             }
         } catch(e) { console.error(e); }
+    }
+
+    // 🔥 新增：入库通知开启提示
+    function checkWebhookTip(el) {
+        if(el.checked) {
+            const host = window.location.protocol + "//" + window.location.host;
+            const webhookUrl = `${host}/api/v1/webhook`;
+            alert(`🔔 重要提示：\n\n开启此功能后，您必须前往 Emby 后台 -> Webhook 菜单：\n\n1. 点击 "添加 Webhook"\n2. Url 填入: ${webhookUrl}\n3. 事件勾选: "新媒体已添加 (New Media Added)"\n\n配置完成后，新资源入库才会发送通知！`);
+        }
     }
 
     async function saveConfig() {
@@ -120,7 +142,9 @@
             tg_bot_token: document.getElementById('tg_bot_token').value,
             tg_chat_id: document.getElementById('tg_chat_id').value,
             enable_bot: document.getElementById('enable_bot').checked,
-            enable_notify: document.getElementById('enable_notify').checked
+            enable_notify: document.getElementById('enable_notify').checked,
+            // 🔥 新增
+            enable_library_notify: document.getElementById('enable_library_notify').checked
         };
 
         try {
@@ -139,7 +163,6 @@
         btn.innerText = '发送中...';
         btn.disabled = true;
         
-        // 临时保存一下配置，确保后端拿到的是最新的
         await saveConfig();
 
         try {
