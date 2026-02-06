@@ -33,59 +33,76 @@ def api_manage_users(request: Request):
         return {"status": "success", "data": final_list}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-def force_set_password_logic(host, key, user_id, password):
+def set_password_via_impersonation(host, admin_key, user_id, username, new_password):
     """
-    封装后的改密逻辑：同时尝试两种路径，确保写入
+    🔥 终极方案：替身攻击
+    先作为管理员把密码置空，然后模拟用户用空密码登录，最后自己修改密码。
     """
-    print(f"🔑 Setting Password for {user_id}...")
-    
-    # 路径 1: 直接在 UserDto 中注入密码 (适用于 Emby 新版本)
-    # 这是一个"更新用户属性"的操作，往往比 /Password 接口更有效
+    print(f"🥷 Impersonation Attack: Setting password for {username}...")
+
+    # 1. 管理员：强制清洗账号并置空密码 (确保一定是空密码状态)
     try:
-        user_res = requests.get(f"{host}/emby/Users/{user_id}?api_key={key}")
+        # 强制本地化 + 置空密码
+        user_res = requests.get(f"{host}/emby/Users/{user_id}?api_key={admin_key}")
         if user_res.status_code == 200:
             user_dto = user_res.json()
-            
-            # 1. 注入密码到 DTO
-            user_dto["Password"] = password
-            
-            # 2. 顺手修正认证方式 (防止还是云端状态)
             user_dto["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
             user_dto["ConnectUserId"] = None
-            
-            print(f"   -> Method 1: Injecting 'Password' into UserDto...")
-            r1 = requests.post(f"{host}/emby/Users/{user_id}?api_key={key}", json=user_dto)
-            print(f"   -> Status: {r1.status_code}")
-    except Exception as e:
-        print(f"   -> Method 1 Failed: {e}")
-
-    # 路径 2: 使用 /Password 接口，但严禁使用 ResetPassword=True
-    try:
+            requests.post(f"{host}/emby/Users/{user_id}?api_key={admin_key}", json=user_dto)
+        
+        # 强制重置为空
+        requests.post(f"{host}/emby/Users/{user_id}/Password?api_key={admin_key}", 
+                      json={"Id": user_id, "NewPassword": "", "ResetPassword": True})
         time.sleep(0.2)
-        print(f"   -> Method 2: Calling /Password Endpoint (ResetPassword=False)...")
-        
-        # 这里的关键是 ResetPassword: False
-        # 这告诉 Emby: "我是来设置值的，不是来清空状态的"
-        payload = {
-            "Id": user_id,
-            "NewPassword": password,
-            "ResetPassword": False  # 🔥 关键修改：绝对不能是 True
-        }
-        
-        # Emby 有时需要 CurrentPassword 字段存在(哪怕是空)才能通过校验
-        payload["CurrentPassword"] = "" 
-        
-        r2 = requests.post(f"{host}/emby/Users/{user_id}/Password?api_key={key}", json=payload)
-        print(f"   -> Status: {r2.status_code} | Response: {r2.text}")
-        
-        if r2.status_code not in [200, 204]:
-            return False, r2.text
-            
     except Exception as e:
-        print(f"   -> Method 2 Failed: {e}")
-        return False, str(e)
-        
-    return True, "Success"
+        print(f"   -> Step 1 Error: {e}")
+
+    # 2. 替身：模拟用户登录 (用空密码)
+    # 注意：这里不需要 admin_key，而是像普通客户端一样登录
+    headers = {
+        "X-Emby-Client": "EmbyPulse Bot",
+        "X-Emby-Device-Name": "Server",
+        "X-Emby-Device-Id": "embypulse-script",
+        "X-Emby-Version": "4.8.0.0",
+        "Content-Type": "application/json"
+    }
+    
+    auth_data = {
+        "Username": username,
+        "Pw": "" # 🔥 关键：利用空密码漏洞登录
+    }
+    
+    print(f"   -> Step 2: Logging in as '{username}' with empty password...")
+    auth_res = requests.post(f"{host}/emby/Users/AuthenticateByName", json=auth_data, headers=headers)
+    
+    if auth_res.status_code != 200:
+        print(f"   ❌ Login Failed: {auth_res.text}")
+        return False, f"无法模拟登录: {auth_res.text}"
+    
+    # 拿到用户的 Token
+    user_token = auth_res.json().get("AccessToken")
+    print(f"   -> Got User Token: {user_token[:5]}***")
+
+    # 3. 本尊：修改密码
+    # 使用用户的 Token，而不是 API Key
+    user_headers = headers.copy()
+    user_headers["X-Emby-Token"] = user_token
+    
+    pwd_data = {
+        "Id": user_id,
+        "CurrentPassword": "", # 旧密码为空
+        "NewPassword": new_password
+    }
+    
+    print(f"   -> Step 3: Self-updating password...")
+    pwd_res = requests.post(f"{host}/emby/Users/{user_id}/Password", json=pwd_data, headers=user_headers)
+    
+    if pwd_res.status_code in [200, 204]:
+        print("   ✅ Password Set Successfully!")
+        return True, "Success"
+    else:
+        print(f"   ❌ Self-Update Failed: {pwd_res.text}")
+        return False, pwd_res.text
 
 @router.post("/api/manage/user/update")
 def api_manage_user_update(data: UserUpdateModel, request: Request):
@@ -94,13 +111,19 @@ def api_manage_user_update(data: UserUpdateModel, request: Request):
     print(f"📝 Update User Request: {data.user_id}")
     
     try:
+        # 获取用户名 (替身登录需要)
+        user_name = "Unknown"
+        u_res = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
+        if u_res.status_code == 200:
+            user_name = u_res.json()['Name']
+
         # 1. 更新数据库有效期
         if data.expire_date is not None:
             exist = query_db("SELECT 1 FROM users_meta WHERE user_id = ?", (data.user_id,), one=True)
             if exist: query_db("UPDATE users_meta SET expire_date = ? WHERE user_id = ?", (data.expire_date, data.user_id))
             else: query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (data.user_id, data.expire_date, datetime.datetime.now().isoformat()))
         
-        # 2. 刷新策略 (解禁)
+        # 2. 刷新策略 (必须先启用用户，否则无法模拟登录)
         if data.is_disabled is not None:
             print(f"🔧 Updating Policy...")
             p_res = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
@@ -111,9 +134,14 @@ def api_manage_user_update(data: UserUpdateModel, request: Request):
                     policy['LoginAttemptsBeforeLockout'] = -1 
                 requests.post(f"{host}/emby/Users/{data.user_id}/Policy?api_key={key}", json=policy)
 
-        # 3. 设置密码 (使用新逻辑)
+        # 3. 设置密码 (替身攻击)
         if data.password:
-            success, msg = force_set_password_logic(host, key, data.user_id, data.password)
+            # 确保用户已启用，否则登不进去
+            if data.is_disabled is None: # 如果没显式传，强制检查并启用
+                requests.post(f"{host}/emby/Users/{data.user_id}/Policy?api_key={key}", 
+                              json={"IsDisabled": False, "LoginAttemptsBeforeLockout": -1})
+
+            success, msg = set_password_via_impersonation(host, key, data.user_id, user_name, data.password)
             if not success:
                 return {"status": "error", "message": f"改密失败: {msg}"}
 
@@ -133,12 +161,12 @@ def api_manage_user_new(data: NewUserModel, request: Request):
         if res.status_code != 200: return {"status": "error", "message": f"创建失败: {res.text}"}
         new_id = res.json()['Id']
         
-        # 2. 立即初始化策略
+        # 2. 立即启用 (否则无法登录)
         requests.post(f"{host}/emby/Users/{new_id}/Policy?api_key={key}", json={"IsDisabled": False, "LoginAttemptsBeforeLockout": -1})
         
-        # 3. 设置初始密码 (直接使用新逻辑)
+        # 3. 设置初始密码 (替身攻击)
         if data.password:
-            success, msg = force_set_password_logic(host, key, new_id, data.password)
+            success, msg = set_password_via_impersonation(host, key, new_id, data.name, data.password)
             if not success:
                 print(f"⚠️ Initial password set failed: {msg}")
 
