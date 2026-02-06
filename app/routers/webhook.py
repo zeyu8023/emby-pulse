@@ -7,7 +7,7 @@ router = APIRouter()
 @router.post("/api/v1/webhook")
 async def emby_webhook(request: Request, background_tasks: BackgroundTasks):
     """
-    统一处理 Emby Webhook 事件
+    统一处理 Emby Webhook 事件 (支持 播放开始/停止、新入库)
     """
     try:
         # 1. 解析数据 (兼容 JSON 和 Form)
@@ -23,12 +23,13 @@ async def emby_webhook(request: Request, background_tasks: BackgroundTasks):
         event_raw = data.get("Event", "")
         event = event_raw.lower().strip()
         
-        # 调试日志：这一步很关键，能看到到底收到了什么
+        # 调试日志
         if event:
-            print(f"🔔 Webhook收到事件: {event_raw}")
+            print(f"🔔 Webhook Event: {event_raw}")
 
         # 3. 路由分发
-        # 新资源入库 (library.new)
+        
+        # [场景A] 新资源入库 (library.new)
         if event == "library.new":
             item = data.get("Item", {})
             item_id = item.get("Id")
@@ -39,10 +40,15 @@ async def emby_webhook(request: Request, background_tasks: BackgroundTasks):
                 print(f"   -> 触发入库推送: {item.get('Name')}")
                 background_tasks.add_task(bot.push_new_media, item_id)
 
-        # 播放开始 (playback.start)
+        # [场景B] 播放开始 (playback.start)
         elif event == "playback.start":
-            print(f"   -> 触发播放推送: {data.get('User', {}).get('Name')}")
-            background_tasks.add_task(bot.push_playback_start, data)
+            print(f"   -> 触发开始播放推送")
+            background_tasks.add_task(bot.push_playback_event, data, "start")
+
+        # [场景C] 播放停止 (playback.stop)
+        elif event == "playback.stop":
+            print(f"   -> 触发停止播放推送")
+            background_tasks.add_task(bot.push_playback_event, data, "stop")
 
         return {"status": "success"}
     
