@@ -3,5 +3,5 @@ uvicorn
 requests
 jinja2
 python-multipart
-itsdangerous  <-- 必须加这个！
-aiofiles      <-- 建议加上，静态文件可能需要
+itsdangerous
+aiofiles
