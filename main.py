@@ -28,6 +28,7 @@ DB_PATH = os.getenv("DB_PATH", "/emby-data/playback_reporting.db")
 
 # 🔥 固定日报封面
 REPORT_COVER_URL = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?q=80&w=1200&auto=format&fit=crop"
+FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 
 DEFAULT_CONFIG = {
     "emby_host": os.getenv("EMBY_HOST", "http://127.0.0.1:8096").rstrip('/'),
@@ -70,7 +71,6 @@ cfg = ConfigManager()
 # ================= 基础设置 =================
 PORT = 10307
 SECRET_KEY = os.getenv("SECRET_KEY", "embypulse_secret_key_2026")
-FALLBACK_IMAGE_URL = "https://img.hotimg.com/a444d32a033994d5b.png"
 TMDB_FALLBACK_POOL = [
     "https://image.tmdb.org/t/p/original/zfbjgQE1uSd9wiPTX4VzsLi0rGG.jpg",
     "https://image.tmdb.org/t/p/original/rLb2cs785pePbIKYQz1CADtovh7.jpg",
@@ -84,7 +84,7 @@ TMDB_FALLBACK_POOL = [
     "https://image.tmdb.org/t/p/original/lzWHmYdfeFiMIY4JaMmtR7GEli3.jpg",
 ]
 
-print(f"--- EmbyPulse V59 (Added User Management) ---")
+print(f"--- EmbyPulse V60 (User Management Fixed) ---")
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=86400*7)
@@ -112,7 +112,7 @@ class BotSettingsModel(BaseModel):
     enable_bot: bool
     enable_notify: bool
 
-# 🔥 新增：用户管理模型
+# 🔥 用户管理模型
 class UserUpdateModel(BaseModel):
     user_id: str
     password: Optional[str] = None
@@ -126,7 +126,7 @@ class NewUserModel(BaseModel):
 
 # ================= 辅助函数 =================
 
-# 🔥 新增：数据库初始化 (创建用户元数据表)
+# 🔥 数据库初始化
 def init_db():
     if not os.path.exists(DB_PATH): return
     try:
@@ -148,23 +148,22 @@ init_db()
 def query_db(query, args=(), one=False):
     if not os.path.exists(DB_PATH): return None
     try:
-        # 改为标准连接，支持写入
-        conn = sqlite3.connect(DB_PATH, timeout=10.0)
+        conn = sqlite3.connect(f"file:{DB_PATH}?mode=rw", uri=True, timeout=10.0)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute(query, args)
         
-        # 如果是查询
         if query.strip().upper().startswith("SELECT"):
             rv = cur.fetchall()
             conn.close()
             return (rv[0] if rv else None) if one else rv
         else:
-            # 如果是增删改
             conn.commit()
             conn.close()
             return True
-    except Exception as e: print(f"❌ SQL Error: {e}"); return None
+    except Exception as e: 
+        # print(f"❌ SQL Error: {e}") 
+        return None
 
 def get_base_filter(user_id_filter: Optional[str]):
     where = "WHERE 1=1"
@@ -196,7 +195,7 @@ class TelegramBot:
         self.running = False
         self.poll_thread = None
         self.monitor_thread = None
-        self.schedule_thread = None # 🔥 新增调度线程
+        self.schedule_thread = None 
         self.offset = 0
         self.active_sessions = {}
         self.last_check_min = -1
@@ -217,7 +216,6 @@ class TelegramBot:
             self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
             self.monitor_thread.start()
         
-        # 🔥 启动调度器
         self.schedule_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
         self.schedule_thread.start()
             
@@ -285,7 +283,6 @@ class TelegramBot:
                 files = {"photo": ("image.jpg", photo_io, "image/jpeg")}
                 requests.post(url, data=data, files=files, proxies=self._get_proxies(), timeout=20)
         except Exception as e: 
-            print(f"Bot SendPhoto Error: {e}")
             self.send_message(chat_id, caption)
 
     def send_message(self, chat_id, text, parse_mode="HTML"):
@@ -331,12 +328,12 @@ class TelegramBot:
 
     def _monitor_loop(self):
         admin_id = str(cfg.get("tg_chat_id"))
-        if not admin_id: return
         while self.running and cfg.get("enable_notify"):
             try:
                 key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
                 if not key or not host: 
                     time.sleep(30); continue
+
                 res = requests.get(f"{host}/emby/Sessions?api_key={key}", timeout=5)
                 if res.status_code == 200:
                     current_active_ids = []
@@ -353,30 +350,28 @@ class TelegramBot:
                                 else: title_fmt = f"{series} - {name}"
                             ticks = s.get("PlayState", {}).get("PositionTicks", 0)
                             total = item.get("RunTimeTicks", 1)
-                            pct = (ticks / total) * 100 if total > 0 else 0; pct_str = f"{pct:.2f}%"
+                            pct = f"{(ticks/total)*100:.1f}%" if total > 0 else "0%"
                             user = s.get("UserName", "User")
                             client = s.get("Client", "Unknown"); device = s.get("DeviceName", "Unknown"); device_str = f"{client} {device}"
-                            remote = s.get("RemoteEndPoint", "Unknown")
-                            ip = remote.split(":")[0] if remote else "Unknown"
-                            if "ffff" in ip: 
-                                ip_match = re.search(r'\d+\.\d+\.\d+\.\d+', ip)
-                                if ip_match: ip = ip_match.group(0)
+                            remote = s.get("RemoteEndPoint", ""); ip = remote.split(":")[0] if remote else "Unknown"
+                            if "ffff" in ip: ip = re.search(r'\d+\.\d+\.\d+\.\d+', ip).group(0) if re.search(r'\d+\.\d+\.\d+\.\d+', ip) else ip
                             
                             if sid not in self.active_sessions:
                                 location = self._get_location(ip)
                                 now_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                session_data = {"title": title_fmt, "type": media_type, "user": user, "ip": ip, "location": location, "device": device_str, "start_time": now_time, "item_id": item_id, "pct": pct_str}
+                                session_data = {"title": title_fmt, "type": media_type, "user": user, "ip": ip, "location": location, "device": device_str, "start_time": now_time, "item_id": item_id, "pct": pct}
                                 self.active_sessions[sid] = session_data
-                                msg = (f"▶️ <b>【{user}】开始播放</b>\n📺 <b>{title_fmt}</b>\n──────────────\n📚 类型：{media_type}\n🔄 进度：{pct_str}\n🌐 地址：{ip} ({location})\n📱 设备：{device_str}\n🕒 时间：{now_time}")
+                                msg = (f"▶️ <b>【{user}】开始播放</b>\n📺 <b>{title_fmt}</b>\n──────────────\n📚 类型：{media_type}\n🔄 进度：{pct}\n🌐 地址：{ip} ({location})\n📱 设备：{device_str}\n🕒 时间：{now_time}")
                                 img = self._download_emby_image(item_id, 'Backdrop') or self._download_emby_image(item_id, 'Primary')
                                 if img: self.send_photo(admin_id, img, msg)
                                 else: self.send_message(admin_id, msg)
-                            else: self.active_sessions[sid]["pct"] = pct_str
+                            else:
+                                self.active_sessions[sid]["pct"] = pct
 
-                    stopped_sids = [sid for sid in self.active_sessions if sid not in current_active_ids]
-                    for sid in stopped_sids:
+                    stopped = [sid for sid in self.active_sessions if sid not in current_active_ids]
+                    for sid in stopped:
                         info = self.active_sessions[sid]
-                        stop_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        stop_time = datetime.datetime.now().strftime("%H:%M:%S")
                         msg = (f"⏹️ <b>【{info['user']}】停止播放</b>\n📺 <b>{info['title']}</b>\n──────────────\n📚 类型：{info['type']}\n🔄 进度：{info['pct']}\n🌐 地址：{info['ip']} ({info['location']})\n📱 设备：{info['device']}\n🕒 时间：{stop_time}")
                         img = self._download_emby_image(info['item_id'], 'Backdrop') or self._download_emby_image(info['item_id'], 'Primary')
                         if img: self.send_photo(admin_id, img, msg)
@@ -385,9 +380,8 @@ class TelegramBot:
                 time.sleep(10)
             except Exception as e: time.sleep(10)
 
-    # 🔥 新增：调度器 (用户有效期检查)
+    # 🔥 调度器：用户有效期检查
     def _scheduler_loop(self):
-        print("🤖 Scheduler Started")
         while self.running:
             try:
                 now = datetime.datetime.now()
@@ -399,7 +393,7 @@ class TelegramBot:
                 time.sleep(5)
             except: time.sleep(60)
 
-    # 🔥 新增：过期检查逻辑
+    # 🔥 检查过期用户
     def _check_user_expiration(self):
         print("🔍 Checking user expirations...")
         users = query_db("SELECT user_id, expire_date FROM users_meta WHERE expire_date IS NOT NULL AND expire_date != ''")
@@ -557,7 +551,6 @@ class TelegramBot:
 
 bot = TelegramBot()
 
-# ================= 🚀 生命周期管理 =================
 @app.on_event("startup")
 async def startup_event():
     bot.start()
@@ -565,6 +558,127 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     bot.stop()
+
+# ================= 🚀 用户管理 API (修复版) =================
+
+@app.get("/api/manage/users")
+def api_manage_users(request: Request):
+    if not request.session.get("user"): return {"status": "error"}
+    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+    try:
+        res = requests.get(f"{host}/emby/Users?api_key={key}", timeout=5)
+        if res.status_code != 200: return {"status": "error", "message": "Emby API Error"}
+        emby_users = res.json()
+        
+        meta_rows = query_db("SELECT * FROM users_meta")
+        meta_map = {r['user_id']: dict(r) for r in meta_rows} if meta_rows else {}
+        
+        final_list = []
+        for u in emby_users:
+            uid = u['Id']
+            meta = meta_map.get(uid, {})
+            policy = u.get('Policy', {})
+            final_list.append({
+                "Id": uid, 
+                "Name": u['Name'], 
+                "LastLoginDate": u.get('LastLoginDate'),
+                "IsDisabled": policy.get('IsDisabled', False), 
+                "IsAdmin": policy.get('IsAdministrator', False),
+                "ExpireDate": meta.get('expire_date'), 
+                "Note": meta.get('note'),
+                "PrimaryImageTag": u.get('PrimaryImageTag') # 🔥 修复：添加头像Tag
+            })
+        
+        return {"status": "success", "data": final_list}
+    except Exception as e: return {"status": "error", "message": str(e)}
+
+@app.post("/api/manage/user/update")
+def api_manage_user_update(data: UserUpdateModel, request: Request):
+    if not request.session.get("user"): return {"status": "error"}
+    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+    try:
+        # 1. 修复：确保 ID 正确存入 DB
+        if data.expire_date is not None:
+            exist = query_db("SELECT 1 FROM users_meta WHERE user_id = ?", (data.user_id,), one=True)
+            if exist: query_db("UPDATE users_meta SET expire_date = ? WHERE user_id = ?", (data.expire_date, data.user_id))
+            else: query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (data.user_id, data.expire_date, datetime.datetime.now().isoformat()))
+        
+        # 2. 修复：密码重置逻辑
+        if data.password:
+            r = requests.post(f"{host}/emby/Users/{data.user_id}/Password?api_key={key}", json={"NewPassword": data.password, "ResetPassword": True})
+            if r.status_code not in [200, 204]: return {"status": "error", "message": f"密码重置失败: {r.text}"}
+
+        # 3. 禁用状态
+        if data.is_disabled is not None:
+            p_res = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
+            if p_res.status_code == 200:
+                policy = p_res.json().get('Policy', {})
+                policy['IsDisabled'] = data.is_disabled
+                requests.post(f"{host}/emby/Users/{data.user_id}/Policy?api_key={key}", json=policy)
+
+        return {"status": "success", "message": "更新成功"}
+    except Exception as e: return {"status": "error", "message": str(e)}
+
+@app.post("/api/manage/user/new")
+def api_manage_user_new(data: NewUserModel, request: Request):
+    if not request.session.get("user"): return {"status": "error"}
+    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+    try:
+        # 1. 创建用户
+        res = requests.post(f"{host}/emby/Users/New?api_key={key}", json={"Name": data.name})
+        if res.status_code != 200: return {"status": "error", "message": f"创建失败: {res.text}"}
+        new_id = res.json()['Id']
+        
+        # 2. 🔥 修复：显式设置 Policy 启用用户
+        requests.post(f"{host}/emby/Users/{new_id}/Policy?api_key={key}", json={"IsDisabled": False})
+
+        # 3. 🔥 修复：设置密码
+        if data.password:
+            r = requests.post(f"{host}/emby/Users/{new_id}/Password?api_key={key}", json={"NewPassword": data.password, "ResetPassword": True})
+            if r.status_code not in [200, 204]: return {"status": "error", "message": "用户创建成功但密码设置失败"}
+
+        # 4. 有效期
+        if data.expire_date:
+            query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (new_id, data.expire_date, datetime.datetime.now().isoformat()))
+            
+        return {"status": "success", "message": "用户创建成功"}
+    except Exception as e: return {"status": "error", "message": str(e)}
+
+@app.delete("/api/manage/user/{user_id}")
+def api_manage_user_delete(user_id: str, request: Request):
+    if not request.session.get("user"): return {"status": "error"}
+    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+    try:
+        res = requests.delete(f"{host}/emby/Users/{user_id}?api_key={key}")
+        if res.status_code in [200, 204]:
+            query_db("DELETE FROM users_meta WHERE user_id = ?", (user_id,))
+            return {"status": "success", "message": "用户已删除"}
+        return {"status": "error", "message": "删除失败"}
+    except Exception as e: return {"status": "error", "message": str(e)}
+
+# 🔥 修复：下拉框数据源改为 Emby API (解决新用户不显示)
+@app.get("/api/users")
+def api_get_users():
+    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+    if not key: return {"status": "error"}
+    try:
+        res = requests.get(f"{host}/emby/Users?api_key={key}", timeout=5)
+        if res.status_code == 200:
+            users = res.json()
+            hidden_users = cfg.get("hidden_users") or []
+            data = []
+            for u in users:
+                data.append({"UserId": u['Id'], "UserName": u['Name'], "IsHidden": u['Id'] in hidden_users})
+            data.sort(key=lambda x: x['UserName'])
+            return {"status": "success", "data": data}
+        return {"status": "success", "data": []}
+    except Exception as e: return {"status": "error", "message": str(e)}
+
+# ================= 🚀 页面路由 (新增) =================
+@app.get("/users_manage")
+async def page_users_manage(request: Request):
+    if not request.session.get("user"): return RedirectResponse("/login")
+    return templates.TemplateResponse("users.html", {"request": request, "active_page": "users_manage", "user": request.session.get("user")})
 
 # ================= 🤖 机器人配置路由 =================
 @app.get("/bot")
@@ -603,81 +717,6 @@ def api_test_bot(request: Request):
         if res.status_code == 200: return {"status": "success", "message": "测试消息已发送"}
         else: return {"status": "error", "message": f"API Error: {res.text}"}
     except Exception as e: return {"status": "error", "message": f"Connect Error: {str(e)}"}
-
-# ================= 🚀 用户管理路由 (新增) =================
-@app.get("/users_manage")
-async def page_users_manage(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("users.html", {"request": request, "active_page": "users_manage", "user": request.session.get("user")})
-
-@app.get("/api/manage/users")
-def api_manage_users(request: Request):
-    if not request.session.get("user"): return {"status": "error"}
-    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
-    try:
-        res = requests.get(f"{host}/emby/Users?api_key={key}", timeout=5)
-        if res.status_code != 200: return {"status": "error", "message": "Emby API Error"}
-        emby_users = res.json()
-        
-        meta_rows = query_db("SELECT * FROM users_meta")
-        meta_map = {r['user_id']: dict(r) for r in meta_rows} if meta_rows else {}
-        
-        final_list = []
-        for u in emby_users:
-            uid = u['Id']
-            meta = meta_map.get(uid, {})
-            policy = u.get('Policy', {})
-            final_list.append({
-                "Id": uid, "Name": u['Name'], "LastLoginDate": u.get('LastLoginDate'),
-                "IsDisabled": policy.get('IsDisabled', False), "IsAdmin": policy.get('IsAdministrator', False),
-                "ExpireDate": meta.get('expire_date'), "Note": meta.get('note')
-            })
-        return {"status": "success", "data": final_list}
-    except Exception as e: return {"status": "error", "message": str(e)}
-
-@app.post("/api/manage/user/update")
-def api_manage_user_update(data: UserUpdateModel, request: Request):
-    if not request.session.get("user"): return {"status": "error"}
-    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
-    try:
-        if data.expire_date is not None:
-            exist = query_db("SELECT 1 FROM users_meta WHERE user_id = ?", (data.user_id,), one=True)
-            if exist: query_db("UPDATE users_meta SET expire_date = ? WHERE user_id = ?", (data.expire_date, data.user_id))
-            else: query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (data.user_id, data.expire_date, datetime.datetime.now().isoformat()))
-        if data.password:
-            requests.post(f"{host}/emby/Users/{data.user_id}/Password?api_key={key}", json={"NewPassword": data.password, "ResetPassword": True})
-        if data.is_disabled is not None:
-            p_res = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
-            if p_res.status_code == 200:
-                policy = p_res.json().get('Policy', {}); policy['IsDisabled'] = data.is_disabled
-                requests.post(f"{host}/emby/Users/{data.user_id}/Policy?api_key={key}", json=policy)
-        return {"status": "success", "message": "更新成功"}
-    except Exception as e: return {"status": "error", "message": str(e)}
-
-@app.post("/api/manage/user/new")
-def api_manage_user_new(data: NewUserModel, request: Request):
-    if not request.session.get("user"): return {"status": "error"}
-    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
-    try:
-        res = requests.post(f"{host}/emby/Users/New?api_key={key}", json={"Name": data.name})
-        if res.status_code != 200: return {"status": "error", "message": f"创建失败: {res.text}"}
-        new_id = res.json()['Id']
-        if data.password: requests.post(f"{host}/emby/Users/{new_id}/Password?api_key={key}", json={"NewPassword": data.password, "ResetPassword": True})
-        if data.expire_date: query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (new_id, data.expire_date, datetime.datetime.now().isoformat()))
-        return {"status": "success", "message": "用户创建成功"}
-    except Exception as e: return {"status": "error", "message": str(e)}
-
-@app.delete("/api/manage/user/{user_id}")
-def api_manage_user_delete(user_id: str, request: Request):
-    if not request.session.get("user"): return {"status": "error"}
-    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
-    try:
-        res = requests.delete(f"{host}/emby/Users/{user_id}?api_key={key}")
-        if res.status_code in [200, 204]:
-            query_db("DELETE FROM users_meta WHERE user_id = ?", (user_id,))
-            return {"status": "success", "message": "用户已删除"}
-        return {"status": "error", "message": "删除失败"}
-    except Exception as e: return {"status": "error", "message": str(e)}
 
 # ================= 原有 API 保持不变 =================
 @app.get("/login")
@@ -767,22 +806,6 @@ def api_save_settings(data: SettingsModel, request: Request):
     cfg.set("emby_host", data.emby_host.rstrip('/')); cfg.set("emby_api_key", data.emby_api_key)
     cfg.set("tmdb_api_key", data.tmdb_api_key); cfg.set("proxy_url", data.proxy_url); cfg.set("hidden_users", data.hidden_users)
     return {"status": "success", "message": "配置已保存"}
-
-@app.get("/api/users")
-def api_get_users():
-    try:
-        results = query_db("SELECT DISTINCT UserId FROM PlaybackActivity")
-        if not results: return {"status": "success", "data": []}
-        user_map = get_user_map(); hidden_users = cfg.get("hidden_users") or []
-        data = []
-        for row in results:
-            uid = row['UserId']
-            if not uid: continue
-            name = user_map.get(uid, f"User {str(uid)[:5]}")
-            data.append({"UserId": uid, "UserName": name, "IsHidden": uid in hidden_users})
-        data.sort(key=lambda x: x['UserName'])
-        return {"status": "success", "data": data}
-    except Exception as e: return {"status": "error", "message": str(e)}
 
 @app.get("/api/stats/dashboard")
 def api_dashboard(user_id: Optional[str] = None):
@@ -923,6 +946,7 @@ def api_top_users_list():
         return {"status": "success", "data": data}
     except: return {"status": "success", "data": []}
 
+# 🔥 修复：增加 Tag 支持，确保头像更新
 @app.get("/api/proxy/image/{item_id}/{img_type}")
 def proxy_image(item_id: str, img_type: str):
     target_id = item_id; key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
@@ -945,11 +969,12 @@ def proxy_image(item_id: str, img_type: str):
     return RedirectResponse(FALLBACK_IMAGE_URL)
 
 @app.get("/api/proxy/user_image/{user_id}")
-def proxy_user_image(user_id: str):
+def proxy_user_image(user_id: str, tag: Optional[str] = None):
     key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
     if not key: return Response(status_code=404)
     try:
         url = f"{host}/emby/Users/{user_id}/Images/Primary?width=200&height=200&mode=Crop"
+        if tag: url += f"&tag={tag}"
         resp = requests.get(url, timeout=3)
         if resp.status_code == 200:
             headers = {"Cache-Control": "public, max-age=31536000", "Access-Control-Allow-Origin": "*"}
