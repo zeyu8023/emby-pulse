@@ -1,5 +1,6 @@
 {% extends "layout.html" %}
 {% block title %}用户管理 - EmbyPulse{% endblock %}
+
 {% block head %}
 <style>
     .status-badge { @apply px-2 py-0.5 rounded-full text-xs font-bold; }
@@ -7,6 +8,7 @@
     .status-disabled { @apply bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400; }
 </style>
 {% endblock %}
+
 {% block content %}
 <div class="max-w-7xl mx-auto w-full px-4 md:px-8 py-8 pb-24">
     
@@ -16,7 +18,7 @@
             <p class="text-xs text-gray-500 mt-1">管理 Emby 账号与有效期</p>
         </div>
         <button onclick="openModal('new')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-blue-200 dark:shadow-none transition flex items-center">
-            <i class="fa-solid fa-user-plus mr-2"></i> 新增用户
+            <i class="fa-solid fa-user-plus mr-2"></i> 新建用户
         </button>
     </div>
 
@@ -48,21 +50,28 @@
     <div class="space-y-4">
         <div id="name-field">
             <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">用户名</label>
-            <input type="text" id="edit-name" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+            <input type="text" id="edit-name" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="输入用户名">
         </div>
         
-        <div>
-            <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">密码 (留空则不修改)</label>
-            <input type="password" id="edit-password" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="******">
+        <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl p-3 flex gap-3">
+            <div class="text-amber-500 mt-0.5"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <div class="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                <p class="font-bold mb-1">密码说明</p>
+                <p>新建用户默认<strong>密码为空</strong>。请创建后通知用户登录 Emby 客户端自行设置密码。</p>
+            </div>
         </div>
 
         <div>
             <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">账号有效期</label>
             <input type="date" id="edit-expire" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-            <p class="text-[10px] text-gray-400 mt-1">留空代表永久有效。过期后账号将被自动禁用。</p>
+            <div class="flex gap-2 mt-2">
+                <button type="button" onclick="setExpire(30)" class="text-[10px] bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded hover:bg-gray-200 dark:text-gray-300">1个月</button>
+                <button type="button" onclick="setExpire(365)" class="text-[10px] bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded hover:bg-gray-200 dark:text-gray-300">1年</button>
+                <button type="button" onclick="document.getElementById('edit-expire').value=''" class="text-[10px] text-blue-500 px-2 py-1 hover:underline">永久有效</button>
+            </div>
         </div>
 
-        <div class="flex items-center justify-between pt-2" id="disable-field">
+        <div class="flex items-center justify-between pt-2 hidden" id="disable-field">
             <span class="text-sm font-bold text-gray-700 dark:text-gray-300">禁用账号</span>
             <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" id="edit-disabled" class="sr-only peer">
@@ -73,14 +82,14 @@
 
     <div class="flex gap-3 mt-6">
         <button onclick="closeModal()" class="flex-1 py-2 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 text-sm font-bold hover:bg-gray-50 dark:hover:bg-gray-700">取消</button>
-        <button onclick="saveUser()" class="flex-1 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-none">保存</button>
+        <button onclick="saveUser()" id="save-btn" class="flex-1 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-none transition-all">保存</button>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-    let currentMode = 'new'; // 'new' or 'edit'
+    let currentMode = 'new'; 
 
     async function init() {
         loadList();
@@ -95,6 +104,11 @@
             const json = await res.json();
             
             if(json.status === 'success') {
+                if (json.data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-xs text-gray-400">暂无用户</td></tr>';
+                    return;
+                }
+
                 let html = '';
                 json.data.forEach(u => {
                     const statusClass = u.IsDisabled ? 'status-disabled' : 'status-active';
@@ -102,8 +116,7 @@
                     const expireText = u.ExpireDate || '永久';
                     const lastActive = u.LastLoginDate ? new Date(u.LastLoginDate).toLocaleDateString() : '从未';
                     
-                    // 🔥 修复：显示头像
-                    let avatarHtml = `<div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center mr-3 text-xs">${u.Name[0].toUpperCase()}</div>`;
+                    let avatarHtml = `<div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center mr-3 text-xs font-bold text-gray-500">${u.Name[0].toUpperCase()}</div>`;
                     if (u.PrimaryImageTag) {
                         avatarHtml = `<img src="/api/proxy/user_image/${u.Id}?tag=${u.PrimaryImageTag}" class="w-8 h-8 rounded-full object-cover mr-3 border border-gray-200 dark:border-gray-600">`;
                     }
@@ -121,14 +134,14 @@
                         <td class="px-6 py-4 font-mono text-xs">${expireText}</td>
                         <td class="px-6 py-4"><span class="${statusClass}">${statusText}</span></td>
                         <td class="px-6 py-4 text-right">
-                            <button onclick="editUser('${u.Id}', '${u.Name}', '${u.ExpireDate || ''}', ${u.IsDisabled})" class="text-blue-500 hover:text-blue-700 mr-3"><i class="fa-solid fa-pen-to-square"></i></button>
-                            <button onclick="deleteUser('${u.Id}', '${u.Name}')" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button>
+                            <button onclick="editUser('${u.Id}', '${u.Name}', '${u.ExpireDate || ''}', ${u.IsDisabled})" class="text-blue-500 hover:text-blue-700 mr-3 transition"><i class="fa-solid fa-pen-to-square"></i></button>
+                            <button onclick="deleteUser('${u.Id}', '${u.Name}')" class="text-red-500 hover:text-red-700 transition"><i class="fa-solid fa-trash"></i></button>
                         </td>
                     </tr>`;
                 });
                 tbody.innerHTML = html;
             }
-        } catch(e) { tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-red-500">加载失败: ${e}</td></tr>`; }
+        } catch(e) { tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-red-500 text-xs">加载失败: ${e}</td></tr>`; }
     }
 
     function openModal(mode) {
@@ -139,9 +152,9 @@
         if (mode === 'new') {
             document.getElementById('modal-title').innerText = '新增用户';
             document.getElementById('name-field').classList.remove('hidden');
-            document.getElementById('disable-field').classList.add('hidden');
+            document.getElementById('disable-field').classList.add('hidden'); // 新建不显示禁用开关
+            
             document.getElementById('edit-name').value = '';
-            document.getElementById('edit-password').value = '';
             document.getElementById('edit-expire').value = '';
         }
     }
@@ -152,11 +165,10 @@
         document.getElementById('user-modal').classList.remove('hidden');
         
         document.getElementById('modal-title').innerText = `编辑用户: ${name}`;
-        document.getElementById('name-field').classList.add('hidden');
-        document.getElementById('disable-field').classList.remove('hidden');
+        document.getElementById('name-field').classList.add('hidden'); // 编辑时不改名
+        document.getElementById('disable-field').classList.remove('hidden'); // 编辑显示禁用开关
         
         document.getElementById('edit-user-id').value = id;
-        document.getElementById('edit-password').value = '';
         document.getElementById('edit-expire').value = expire;
         document.getElementById('edit-disabled').checked = disabled;
     }
@@ -166,9 +178,19 @@
         document.getElementById('user-modal').classList.add('hidden');
     }
 
+    function setExpire(days) {
+        const date = new Date();
+        date.setDate(date.getDate() + days);
+        document.getElementById('edit-expire').value = date.toISOString().split('T')[0];
+    }
+
     async function saveUser() {
-        const pwd = document.getElementById('edit-password').value;
         const expire = document.getElementById('edit-expire').value || null;
+        const btn = document.getElementById('save-btn');
+        const oldText = btn.innerText;
+        
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 处理中';
         
         let url = '', body = {};
         
@@ -176,17 +198,17 @@
             url = '/api/manage/user/new';
             body = {
                 name: document.getElementById('edit-name').value,
-                password: pwd,
                 expire_date: expire
+                // password 字段已移除
             };
-            if(!body.name) return alert('请输入用户名');
+            if(!body.name) { btn.disabled=false; btn.innerText=oldText; return alert('请输入用户名'); }
         } else {
             url = '/api/manage/user/update';
             body = {
                 user_id: document.getElementById('edit-user-id').value,
-                password: pwd || null, // 空则不发
                 expire_date: expire,
                 is_disabled: document.getElementById('edit-disabled').checked
+                // password 字段已移除
             };
         }
 
@@ -197,18 +219,25 @@
                 body: JSON.stringify(body)
             });
             const json = await res.json();
+            
             if(json.status === 'success') {
                 closeModal();
                 loadList();
+                // 成功后弹出提示，告知密码为空
                 alert(json.message);
             } else {
                 alert('操作失败: ' + json.message);
             }
-        } catch(e) { alert('网络错误'); }
+        } catch(e) { alert('网络错误'); } 
+        finally {
+            btn.disabled = false;
+            btn.innerText = oldText;
+        }
     }
 
     async function deleteUser(id, name) {
-        if(!confirm(`⚠️ 危险操作！\n\n确定要永久删除用户 [${name}] 吗？\n此操作不可恢复！`)) return;
+        if(!confirm(`⚠️ 危险操作！\n\n确定要永久删除用户 [${name}] 吗？\n此操作不可恢复，且会清空该用户的播放记录！`)) return;
+        
         try {
             const res = await fetch(`/api/manage/user/${id}`, { method: 'DELETE' });
             const json = await res.json();
