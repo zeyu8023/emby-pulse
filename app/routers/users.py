@@ -9,7 +9,7 @@ import time
 
 router = APIRouter()
 
-# Emby 本地默认认证提供商
+# 默认认证提供商
 DEFAULT_AUTH_PROVIDER = "Emby.Server.Implementations.Library.DefaultAuthenticationProvider"
 
 @router.get("/api/manage/users")
@@ -33,6 +33,60 @@ def api_manage_users(request: Request):
         return {"status": "success", "data": final_list}
     except Exception as e: return {"status": "error", "message": str(e)}
 
+def force_set_password_logic(host, key, user_id, password):
+    """
+    封装后的改密逻辑：同时尝试两种路径，确保写入
+    """
+    print(f"🔑 Setting Password for {user_id}...")
+    
+    # 路径 1: 直接在 UserDto 中注入密码 (适用于 Emby 新版本)
+    # 这是一个"更新用户属性"的操作，往往比 /Password 接口更有效
+    try:
+        user_res = requests.get(f"{host}/emby/Users/{user_id}?api_key={key}")
+        if user_res.status_code == 200:
+            user_dto = user_res.json()
+            
+            # 1. 注入密码到 DTO
+            user_dto["Password"] = password
+            
+            # 2. 顺手修正认证方式 (防止还是云端状态)
+            user_dto["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
+            user_dto["ConnectUserId"] = None
+            
+            print(f"   -> Method 1: Injecting 'Password' into UserDto...")
+            r1 = requests.post(f"{host}/emby/Users/{user_id}?api_key={key}", json=user_dto)
+            print(f"   -> Status: {r1.status_code}")
+    except Exception as e:
+        print(f"   -> Method 1 Failed: {e}")
+
+    # 路径 2: 使用 /Password 接口，但严禁使用 ResetPassword=True
+    try:
+        time.sleep(0.2)
+        print(f"   -> Method 2: Calling /Password Endpoint (ResetPassword=False)...")
+        
+        # 这里的关键是 ResetPassword: False
+        # 这告诉 Emby: "我是来设置值的，不是来清空状态的"
+        payload = {
+            "Id": user_id,
+            "NewPassword": password,
+            "ResetPassword": False  # 🔥 关键修改：绝对不能是 True
+        }
+        
+        # Emby 有时需要 CurrentPassword 字段存在(哪怕是空)才能通过校验
+        payload["CurrentPassword"] = "" 
+        
+        r2 = requests.post(f"{host}/emby/Users/{user_id}/Password?api_key={key}", json=payload)
+        print(f"   -> Status: {r2.status_code} | Response: {r2.text}")
+        
+        if r2.status_code not in [200, 204]:
+            return False, r2.text
+            
+    except Exception as e:
+        print(f"   -> Method 2 Failed: {e}")
+        return False, str(e)
+        
+    return True, "Success"
+
 @router.post("/api/manage/user/update")
 def api_manage_user_update(data: UserUpdateModel, request: Request):
     if not request.session.get("user"): return {"status": "error"}
@@ -46,38 +100,9 @@ def api_manage_user_update(data: UserUpdateModel, request: Request):
             if exist: query_db("UPDATE users_meta SET expire_date = ? WHERE user_id = ?", (data.expire_date, data.user_id))
             else: query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (data.user_id, data.expire_date, datetime.datetime.now().isoformat()))
         
-        # 🔥 Step 1: 饱和攻击 (同时尝试多种改密路径)
-        if data.password or data.is_disabled is not None:
-            user_res = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
-            if user_res.status_code == 200:
-                user_dto = user_res.json()
-                
-                print(f"🧹 [Step 1] Executing Saturation Update...")
-                
-                # A. 确保本地认证
-                user_dto["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
-                user_dto["ConnectUserId"] = None
-                user_dto["ConnectUserName"] = None
-                
-                # B. 强制触发数据库写入 (Toggle Dirty Bit)
-                # 切换 PlayDefaultAudioTrack 的状态，迫使数据库写盘
-                if "Configuration" not in user_dto: user_dto["Configuration"] = {}
-                current_val = user_dto["Configuration"].get("PlayDefaultAudioTrack", True)
-                user_dto["Configuration"]["PlayDefaultAudioTrack"] = not current_val
-                
-                # C. 🔥 关键：尝试通过 Legacy 字段设置密码
-                # 某些版本允许直接在 UserDto 里带 Password
-                if data.password:
-                    user_dto["Password"] = data.password
-                    # user_dto["OriginalPrimaryImageTag"] = "force_update" # 甚至可以改个Tag
-
-                # 提交更新 (这应该会耗时 >20ms)
-                r1 = requests.post(f"{host}/emby/Users/{data.user_id}?api_key={key}", json=user_dto)
-                print(f"   -> Update Status: {r1.status_code}")
-
-        # 2. 刷新策略
+        # 2. 刷新策略 (解禁)
         if data.is_disabled is not None:
-            print(f"🔧 [Step 2] Updating Policy...")
+            print(f"🔧 Updating Policy...")
             p_res = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
             if p_res.status_code == 200:
                 policy = p_res.json().get('Policy', {})
@@ -86,28 +111,11 @@ def api_manage_user_update(data: UserUpdateModel, request: Request):
                     policy['LoginAttemptsBeforeLockout'] = -1 
                 requests.post(f"{host}/emby/Users/{data.user_id}/Policy?api_key={key}", json=policy)
 
-        # 3. 🔥 Step 3: 多重改密请求
+        # 3. 设置密码 (使用新逻辑)
         if data.password:
-            print(f"🔑 [Step 3] Firing Password Endpoints...")
-            time.sleep(0.3)
-            
-            # 尝试 1: 标准强制重置
-            print(f"   -> Method A: ResetPassword=True")
-            requests.post(f"{host}/emby/Users/{data.user_id}/Password?api_key={key}", 
-                          json={"Id": data.user_id, "NewPassword": data.password, "ResetPassword": True})
-            
-            # 尝试 2: 隐式设置 (ResetPassword=False, 无旧密码)
-            # 有些版本 API Key 权限够大，不需要旧密码
-            print(f"   -> Method B: ResetPassword=False (No Current)")
-            requests.post(f"{host}/emby/Users/{data.user_id}/Password?api_key={key}", 
-                          json={"Id": data.user_id, "NewPassword": data.password, "ResetPassword": False})
-
-            # 尝试 3: 空旧密码 (如果 Step 1 把密码搞空了，这个会生效)
-            print(f"   -> Method C: CurrentPassword=''")
-            r_final = requests.post(f"{host}/emby/Users/{data.user_id}/Password?api_key={key}", 
-                          json={"Id": data.user_id, "NewPassword": data.password, "CurrentPassword": "", "ResetPassword": False})
-
-            print(f"   -> Emby Final Response: {r_final.status_code}")
+            success, msg = force_set_password_logic(host, key, data.user_id, data.password)
+            if not success:
+                return {"status": "error", "message": f"改密失败: {msg}"}
 
         return {"status": "success", "message": "更新成功"}
     except Exception as e: 
@@ -120,28 +128,21 @@ def api_manage_user_new(data: NewUserModel, request: Request):
     key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
     print(f"📝 New User: {data.name}")
     try:
-        # 1. 创建
+        # 1. 创建用户
         res = requests.post(f"{host}/emby/Users/New?api_key={key}", json={"Name": data.name})
         if res.status_code != 200: return {"status": "error", "message": f"创建失败: {res.text}"}
         new_id = res.json()['Id']
         
-        # 2. 强制本地化
-        user_res = requests.get(f"{host}/emby/Users/{new_id}?api_key={key}")
-        if user_res.status_code == 200:
-            user_dto = user_res.json()
-            user_dto["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
-            user_dto["ConnectUserId"] = None
-            if data.password: user_dto["Password"] = data.password # 尝试直接设置
-            requests.post(f"{host}/emby/Users/{new_id}?api_key={key}", json=user_dto)
-
-        # 3. 策略
+        # 2. 立即初始化策略
         requests.post(f"{host}/emby/Users/{new_id}/Policy?api_key={key}", json={"IsDisabled": False, "LoginAttemptsBeforeLockout": -1})
         
-        # 4. 设置初始密码
+        # 3. 设置初始密码 (直接使用新逻辑)
         if data.password:
-            requests.post(f"{host}/emby/Users/{new_id}/Password?api_key={key}", json={"NewPassword": data.password, "ResetPassword": True})
+            success, msg = force_set_password_logic(host, key, new_id, data.password)
+            if not success:
+                print(f"⚠️ Initial password set failed: {msg}")
 
-        # 5. 记录
+        # 4. 记录有效期
         if data.expire_date:
             query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (new_id, data.expire_date, datetime.datetime.now().isoformat()))
             
