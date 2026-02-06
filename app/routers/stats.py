@@ -31,7 +31,6 @@ def api_recent_activity(user_id: Optional[str] = None):
         where, params = get_base_filter(user_id)
         results = query_db(f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 100", params)
         if not results: return {"status": "success", "data": []}
-        # 这里需要获取用户名，但为了简化不循环调用，前端ID即可，或者再查一次Map
         from app.services.bot_service import get_user_map
         user_map = get_user_map(); data = []
         for row in results:
@@ -95,7 +94,7 @@ def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'day'):
         return {"status": "success", "data": data}
     except: return {"status": "error", "data": {}}
 
-@app.get("/api/stats/poster_data")
+@router.get("/api/stats/poster_data")
 def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
     try:
         where_base, params = get_base_filter(user_id)
@@ -116,7 +115,7 @@ def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
         return {"status": "success", "data": {"plays": total_plays, "hours": round(total_duration / 3600), "server_plays": server_plays, "top_list": top_list[:10], "tags": ["观影达人"]}}
     except: return {"status": "error", "data": {"plays": 0, "hours": 0}}
 
-@app.get("/api/stats/top_users_list")
+@router.get("/api/stats/top_users_list")
 def api_top_users_list():
     try:
         res = query_db("SELECT UserId, COUNT(*) as Plays, SUM(PlayDuration) as TotalTime FROM PlaybackActivity GROUP BY UserId ORDER BY TotalTime DESC")
@@ -130,7 +129,7 @@ def api_top_users_list():
         return {"status": "success", "data": data}
     except: return {"status": "success", "data": []}
 
-@app.get("/api/stats/badges")
+@router.get("/api/stats/badges")
 def api_badges(user_id: Optional[str] = None):
     try:
         where, params = get_base_filter(user_id); badges = []
@@ -143,7 +142,7 @@ def api_badges(user_id: Optional[str] = None):
         return {"status": "success", "data": badges}
     except: return {"status": "success", "data": []}
 
-@app.get("/api/stats/monthly_stats")
+@router.get("/api/stats/monthly_stats")
 def api_monthly_stats(user_id: Optional[str] = None):
     try:
         where_base, params = get_base_filter(user_id)

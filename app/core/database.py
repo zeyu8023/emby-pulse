@@ -1,13 +1,11 @@
 import sqlite3
 import os
-from app.core.config import cfg
-
-DB_PATH = os.getenv("DB_PATH", "/emby-data/playback_reporting.db")
+from app.core.config import cfg, DB_PATH
 
 def init_db():
     if not os.path.exists(DB_PATH): return
     try:
-        conn = sqlite3.connect(DB_PATH) # 标准连接
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS users_meta (
                         user_id TEXT PRIMARY KEY,
