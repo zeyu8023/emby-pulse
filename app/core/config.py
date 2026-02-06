@@ -55,8 +55,8 @@ DEFAULT_CONFIG = {
     "tg_bot_token": "",
     "tg_chat_id": "",     
     "enable_bot": False,  
-    "enable_notify": False,
-    "enable_library_notify": False,  # 🔥 新增：入库通知开关
+    "enable_notify": False,          # 播放通知开关
+    "enable_library_notify": False,  # 🔥 入库通知开关
     "scheduled_tasks": []
 }
 
