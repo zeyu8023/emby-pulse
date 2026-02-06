@@ -46,42 +46,33 @@ def api_manage_user_update(data: UserUpdateModel, request: Request):
             if exist: query_db("UPDATE users_meta SET expire_date = ? WHERE user_id = ?", (data.expire_date, data.user_id))
             else: query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (data.user_id, data.expire_date, datetime.datetime.now().isoformat()))
         
-        # 🔥 Step 1: 改名重塑 (强制 Emby 写库)
+        # 🔥 Step 1: 注入 PIN 码 (强制激活本地认证)
         if data.password or data.is_disabled is not None:
             user_res = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
             if user_res.status_code == 200:
                 user_dto = user_res.json()
                 original_name = user_dto["Name"]
                 
-                # 只有当需要净化时才执行改名，避免不必要的震荡
-                # 但为了修复目前的死局，我们放宽条件：只要是改密码，就强制执行一次重塑
-                print(f"🧹 [Step 1] Renaming User to Force DB Write...")
+                print(f"🧹 [Step 1] Injecting PIN Code to Force Local Auth...")
                 
-                # --- 动作 A: 改名为 xxx_repair + 清除云端字段 ---
-                user_dto["Name"] = f"{original_name}_repair"
+                # --- 动作: 强制设置本地 PIN 码 + 清除云端 ---
                 user_dto["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
-                user_dto["ConnectUserId"] = ""
-                user_dto["ConnectUserName"] = ""
-                user_dto["ConnectLinkType"] = ""
+                user_dto["EasyPassword"] = "1234" # 设置一个临时 PIN，强迫 Emby 认领此账号为本地
+                
+                # 🔥 修正：必须用 None (JSON null)，不能用空字符串
+                user_dto["ConnectUserId"] = None
+                user_dto["ConnectUserName"] = None
+                user_dto["ConnectLinkType"] = None
+                
+                # 改个名确保写库
+                user_dto["Name"] = f"{original_name}_fix"
+                
                 if "Password" in user_dto: del user_dto["Password"]
+                if "Configuration" in user_dto and "Password" in user_dto["Configuration"]: 
+                    del user_dto["Configuration"]["Password"]
                 
                 r1 = requests.post(f"{host}/emby/Users/{data.user_id}?api_key={key}", json=user_dto)
-                print(f"   -> Rename Status: {r1.status_code} (Expect >20ms)")
-
-                # --- 动作 B: 改回原名 ---
-                # 必须重新获取 User 对象，因为 Version Hash 变了
-                time.sleep(0.2)
-                user_res_2 = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
-                if user_res_2.status_code == 200:
-                    user_dto_2 = user_res_2.json()
-                    user_dto_2["Name"] = original_name # 改回去
-                    # 再次确保这些字段为空
-                    user_dto_2["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
-                    user_dto_2["ConnectUserId"] = ""
-                    user_dto_2["ConnectUserName"] = ""
-                    
-                    r2 = requests.post(f"{host}/emby/Users/{data.user_id}?api_key={key}", json=user_dto_2)
-                    print(f"   -> Restore Status: {r2.status_code}")
+                print(f"   -> Inject Status: {r1.status_code}")
 
         # 2. 刷新策略
         if data.is_disabled is not None:
@@ -94,19 +85,40 @@ def api_manage_user_update(data: UserUpdateModel, request: Request):
                     policy['LoginAttemptsBeforeLockout'] = -1 
                 requests.post(f"{host}/emby/Users/{data.user_id}/Policy?api_key={key}", json=policy)
 
-        # 3. 🔥 Step 3: 管理员强制改密
+        # 3. 🔥 Step 3: 管理员强制改密 (此时账号有 PIN，必然是本地账号)
         if data.password:
             print(f"🔑 [Step 3] Force Admin Password Reset...")
-            time.sleep(0.3)
+            time.sleep(0.5) 
             
+            # 先归零
+            payload_zero = { "Id": data.user_id, "NewPassword": "", "ResetPassword": True }
+            requests.post(f"{host}/emby/Users/{data.user_id}/Password?api_key={key}", json=payload_zero)
+            
+            time.sleep(0.2)
+            
+            # 再设置
             payload = { 
                 "Id": data.user_id, 
                 "NewPassword": data.password, 
-                "ResetPassword": True 
+                "ResetPassword": False 
             }
             r = requests.post(f"{host}/emby/Users/{data.user_id}/Password?api_key={key}", json=payload)
-            
             print(f"   -> Emby Final Response: {r.status_code}")
+            
+            # 🔥 Step 4: 清理现场 (移除 PIN 码，恢复名字)
+            print(f"🧹 [Step 4] Cleaning up PIN and Name...")
+            restore_res = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
+            if restore_res.status_code == 200:
+                restore_dto = restore_res.json()
+                if restore_dto["Name"].endswith("_fix"):
+                    restore_dto["Name"] = restore_dto["Name"].replace("_fix", "") # 恢复原名
+                
+                restore_dto["EasyPassword"] = None # 🔥 删除 PIN 码
+                restore_dto["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
+                restore_dto["ConnectUserId"] = None
+                
+                requests.post(f"{host}/emby/Users/{data.user_id}?api_key={key}", json=restore_dto)
+
             if r.status_code not in [200, 204]:
                 return {"status": "error", "message": f"改密失败: {r.text}"}
 
@@ -131,9 +143,8 @@ def api_manage_user_new(data: NewUserModel, request: Request):
         if user_res.status_code == 200:
             user_dto = user_res.json()
             user_dto["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
-            user_dto["ConnectUserId"] = ""
-            user_dto["ConnectUserName"] = ""
-            user_dto["ConnectLinkType"] = ""
+            user_dto["ConnectUserId"] = None
+            user_dto["ConnectUserName"] = None
             requests.post(f"{host}/emby/Users/{new_id}?api_key={key}", json=user_dto)
 
         # 3. 策略
@@ -141,7 +152,9 @@ def api_manage_user_new(data: NewUserModel, request: Request):
         
         # 4. 设置初始密码
         if data.password:
-            requests.post(f"{host}/emby/Users/{new_id}/Password?api_key={key}", json={"NewPassword": data.password, "ResetPassword": True})
+            requests.post(f"{host}/emby/Users/{new_id}/Password?api_key={key}", json={"NewPassword": "", "ResetPassword": True})
+            time.sleep(0.1)
+            requests.post(f"{host}/emby/Users/{new_id}/Password?api_key={key}", json={"CurrentPassword": "", "NewPassword": data.password, "ResetPassword": False})
 
         # 5. 记录
         if data.expire_date:
