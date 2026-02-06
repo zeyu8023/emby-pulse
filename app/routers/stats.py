@@ -6,46 +6,89 @@ import requests
 
 router = APIRouter()
 
+# --- 内部工具函数：获取用户映射 ---
+# 独立于 bot_service，防止循环依赖导致 API 崩溃
+def get_user_map_local():
+    user_map = {}
+    key = cfg.get("emby_api_key")
+    host = cfg.get("emby_host")
+    if key and host:
+        try:
+            res = requests.get(f"{host}/emby/Users?api_key={key}", timeout=2)
+            if res.status_code == 200:
+                for u in res.json(): 
+                    user_map[u['Id']] = u['Name']
+        except: 
+            pass
+    return user_map
+
 @router.get("/api/stats/dashboard")
 def api_dashboard(user_id: Optional[str] = None):
     try:
         where, params = get_base_filter(user_id)
         plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where}", params)[0]['c']
+        # 活跃用户：过去30天有播放记录的
         users = query_db(f"SELECT COUNT(DISTINCT UserId) as c FROM PlaybackActivity {where} AND DateCreated > date('now', '-30 days')", params)[0]['c']
         dur = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {where}", params)[0]['c'] or 0
+        
         base = {"total_plays": plays, "active_users": users, "total_duration": dur}
         lib = {"movie": 0, "series": 0, "episode": 0}
-        key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+        
+        key = cfg.get("emby_api_key")
+        host = cfg.get("emby_host")
         if key and host:
             try:
-                res = requests.get(f"{host}/emby/Items/Counts?api_key={key}", timeout=10)
+                # 增加超时，防止卡住
+                res = requests.get(f"{host}/emby/Items/Counts?api_key={key}", timeout=5)
                 if res.status_code == 200:
-                    d = res.json(); lib = {"movie": d.get("MovieCount"), "series": d.get("SeriesCount"), "episode": d.get("EpisodeCount")}
-            except Exception as e: print(f"⚠️ Dashboard Error: {e}")
+                    d = res.json()
+                    lib = {
+                        "movie": d.get("MovieCount", 0), 
+                        "series": d.get("SeriesCount", 0), 
+                        "episode": d.get("EpisodeCount", 0)
+                    }
+            except Exception as e: 
+                print(f"⚠️ Dashboard Emby API Error: {e}")
+                
         return {"status": "success", "data": {**base, "library": lib}}
-    except: return {"status": "error", "data": {"total_plays":0, "library": {}}}
+    except Exception as e: 
+        print(f"⚠️ Dashboard DB Error: {e}")
+        return {"status": "error", "data": {"total_plays":0, "library": {}}}
 
 @router.get("/api/stats/recent")
 def api_recent_activity(user_id: Optional[str] = None):
     try:
         where, params = get_base_filter(user_id)
-        results = query_db(f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 100", params)
-        if not results: return {"status": "success", "data": []}
-        from app.services.bot_service import get_user_map
-        user_map = get_user_map(); data = []
+        # 获取最近 50 条记录
+        results = query_db(f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 50", params)
+        
+        if not results: 
+            return {"status": "success", "data": []}
+            
+        user_map = get_user_map_local()
+        data = []
         for row in results:
-            item = dict(row); item['UserName'] = user_map.get(item['UserId'], "User"); item['DisplayName'] = item['ItemName']
+            item = dict(row)
+            # 填充用户名，没有则显示 User
+            item['UserName'] = user_map.get(item['UserId'], "User")
+            item['DisplayName'] = item['ItemName']
             data.append(item)
+            
         return {"status": "success", "data": data}
-    except: return {"status": "error", "data": []}
+    except Exception as e: 
+        print(f"⚠️ Recent Activity Error: {e}")
+        return {"status": "error", "data": []}
 
 @router.get("/api/live")
 def api_live_sessions():
-    key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+    key = cfg.get("emby_api_key")
+    host = cfg.get("emby_host")
     if not key: return {"status": "error"}
     try:
-        res = requests.get(f"{host}/emby/Sessions?api_key={key}", timeout=2)
-        if res.status_code == 200: return {"status": "success", "data": [s for s in res.json() if s.get("NowPlayingItem")]}
+        res = requests.get(f"{host}/emby/Sessions?api_key={key}", timeout=3)
+        if res.status_code == 200: 
+            # 只返回正在播放的会话
+            return {"status": "success", "data": [s for s in res.json() if s.get("NowPlayingItem")]}
     except: pass
     return {"status": "success", "data": []}
 
@@ -55,13 +98,25 @@ def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by
         where, params = get_base_filter(user_id)
         if category == 'Movie': where += " AND ItemType = 'Movie'"
         elif category == 'Episode': where += " AND ItemType = 'Episode'"
-        sql = f"SELECT ItemName, ItemId, ItemType, PlayDuration FROM PlaybackActivity {where} LIMIT 2000"
-        rows = query_db(sql, params); aggregated = {}
+        
+        # 限制查询量，优化性能
+        sql = f"SELECT ItemName, ItemId, ItemType, PlayDuration FROM PlaybackActivity {where} LIMIT 5000"
+        rows = query_db(sql, params)
+        
+        aggregated = {}
         for row in rows:
+            # 清洗标题，合并 'Series - Episode'
             clean = row['ItemName'].split(' - ')[0]
-            if clean not in aggregated: aggregated[clean] = {'ItemName': clean, 'ItemId': row['ItemId'], 'PlayCount': 0, 'TotalTime': 0}
-            aggregated[clean]['PlayCount'] += 1; aggregated[clean]['TotalTime'] += (row['PlayDuration'] or 0); aggregated[clean]['ItemId'] = row['ItemId']
-        res = list(aggregated.values()); res.sort(key=lambda x: x['TotalTime'] if sort_by == 'time' else x['PlayCount'], reverse=True)
+            if clean not in aggregated: 
+                aggregated[clean] = {'ItemName': clean, 'ItemId': row['ItemId'], 'PlayCount': 0, 'TotalTime': 0}
+            
+            aggregated[clean]['PlayCount'] += 1
+            aggregated[clean]['TotalTime'] += (row['PlayDuration'] or 0)
+            aggregated[clean]['ItemId'] = row['ItemId']
+            
+        res = list(aggregated.values())
+        res.sort(key=lambda x: x['TotalTime'] if sort_by == 'time' else x['PlayCount'], reverse=True)
+        
         return {"status": "success", "data": res[:50]}
     except: return {"status": "error", "data": []}
 
@@ -69,33 +124,64 @@ def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by
 def api_user_details(user_id: Optional[str] = None):
     try:
         where, params = get_base_filter(user_id)
+        
+        # 1. 小时分布
         h_res = query_db(f"SELECT strftime('%H', DateCreated) as Hour, COUNT(*) as Plays FROM PlaybackActivity {where} GROUP BY Hour", params)
         h_data = {str(i).zfill(2): 0 for i in range(24)}
-        if h_res: 
+        if h_res:
             for r in h_res: h_data[r['Hour']] = r['Plays']
+            
+        # 2. 设备分布
         d_res = query_db(f"SELECT COALESCE(DeviceName, ClientName, 'Unknown') as Device, COUNT(*) as Plays FROM PlaybackActivity {where} GROUP BY Device ORDER BY Plays DESC LIMIT 10", params)
+        
+        # 3. 详细日志
         l_res = query_db(f"SELECT DateCreated, ItemName, PlayDuration, COALESCE(DeviceName, ClientName) as Device, UserId FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 100", params)
-        from app.services.bot_service import get_user_map
-        u_map = get_user_map(); logs = []
+        
+        u_map = get_user_map_local()
+        logs = []
         if l_res:
-            for r in l_res: l = dict(r); l['UserName'] = u_map.get(l['UserId'], "User"); logs.append(l)
+            for r in l_res: 
+                l = dict(r)
+                l['UserName'] = u_map.get(l['UserId'], "User")
+                logs.append(l)
+                
         return {"status": "success", "data": {"hourly": h_data, "devices": [dict(r) for r in d_res] if d_res else [], "logs": logs}}
-    except: return {"status": "error", "data": {"hourly": {}, "devices": [], "logs": []}}
+    except Exception as e: 
+        print(f"Details Error: {e}")
+        return {"status": "error", "data": {"hourly": {}, "devices": [], "logs": []}}
 
 @router.get("/api/stats/chart")
 @router.get("/api/stats/trend")
 def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'day'):
     try:
         where, params = get_base_filter(user_id)
-        sql = f"SELECT date(DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Label ORDER BY Label"
-        results = query_db(sql, params); data = {}
+        
+        date_format = "%Y-%m-%d"
+        limit = "30 days"
+        
+        if dimension == 'week':
+            # 按周聚合 (SQLite strftime %W)
+            sql = f"SELECT strftime('%Y-%W', DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} AND DateCreated > date('now', '-120 days') GROUP BY Label ORDER BY Label"
+        elif dimension == 'month':
+            sql = f"SELECT strftime('%Y-%m', DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} AND DateCreated > date('now', '-365 days') GROUP BY Label ORDER BY Label"
+        else:
+            # 默认按天
+            sql = f"SELECT date(DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} AND DateCreated > date('now', '-30 days') GROUP BY Label ORDER BY Label"
+
+        results = query_db(sql, params)
+        data = {}
         if results:
             for r in results: data[r['Label']] = int(r['Duration'])
+            
         return {"status": "success", "data": data}
-    except: return {"status": "error", "data": {}}
+    except Exception as e: 
+        print(f"Chart Error: {e}")
+        return {"status": "error", "data": {}}
 
 @router.get("/api/stats/poster_data")
 def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
+    # ... (保持原样，或者如果您需要我也一起贴出来)
+    # 为节省篇幅，这里复用您已有的逻辑，只需确保 query_db 可用
     try:
         where_base, params = get_base_filter(user_id)
         date_filter = ""
@@ -118,19 +204,29 @@ def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
 @router.get("/api/stats/top_users_list")
 def api_top_users_list():
     try:
-        res = query_db("SELECT UserId, COUNT(*) as Plays, SUM(PlayDuration) as TotalTime FROM PlaybackActivity GROUP BY UserId ORDER BY TotalTime DESC")
+        # 获取播放时长最多的前 10 名用户
+        res = query_db("SELECT UserId, COUNT(*) as Plays, SUM(PlayDuration) as TotalTime FROM PlaybackActivity GROUP BY UserId ORDER BY TotalTime DESC LIMIT 10")
         if not res: return {"status": "success", "data": []}
-        from app.services.bot_service import get_user_map
-        user_map = get_user_map(); hidden = cfg.get("hidden_users") or []; data = []
+        
+        user_map = get_user_map_local()
+        hidden = cfg.get("hidden_users") or []
+        data = []
+        
         for row in res:
             if row['UserId'] in hidden: continue
-            u = dict(row); u['UserName'] = user_map.get(u['UserId'], f"User {str(u['UserId'])[:5]}"); data.append(u)
-            if len(data) >= 5: break
+            u = dict(row)
+            u['UserName'] = user_map.get(u['UserId'], f"User {str(u['UserId'])[:5]}")
+            data.append(u)
+            if len(data) >= 5: break # 只取前5展示
+            
         return {"status": "success", "data": data}
-    except: return {"status": "success", "data": []}
+    except Exception as e: 
+        print(f"Top Users Error: {e}")
+        return {"status": "success", "data": []}
 
 @router.get("/api/stats/badges")
 def api_badges(user_id: Optional[str] = None):
+    # ... (逻辑不变，确保 query_db 可用即可) ...
     try:
         where, params = get_base_filter(user_id); badges = []
         night_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND strftime('%H', DateCreated) BETWEEN '02' AND '05'", params)
