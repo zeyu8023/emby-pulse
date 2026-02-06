@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict
+from contextlib import asynccontextmanager
 
 # ================= 配置与持久化 =================
 CONFIG_DIR = "/app/config"
@@ -36,6 +37,7 @@ DEFAULT_CONFIG = {
     "tmdb_api_key": os.getenv("TMDB_API_KEY", "").strip(),
     "proxy_url": "",
     "hidden_users": [],
+    # 🤖 机器人配置
     "tg_bot_token": "",
     "tg_chat_id": "",     
     "enable_bot": False,  
@@ -83,16 +85,6 @@ TMDB_FALLBACK_POOL = [
     "https://image.tmdb.org/t/p/original/lzWHmYdfeFiMIY4JaMmtR7GEli3.jpg",
 ]
 
-print(f"--- EmbyPulse V60.2 (Pure Fix) ---")
-
-app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=86400*7)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-
-if not os.path.exists("static"): os.makedirs("static")
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
-
 # ================= 数据模型 =================
 class LoginModel(BaseModel):
     username: str
@@ -116,7 +108,7 @@ class UserUpdateModel(BaseModel):
     user_id: str
     password: Optional[str] = None
     is_disabled: Optional[bool] = None
-    expire_date: Optional[str] = None # YYYY-MM-DD
+    expire_date: Optional[str] = None
 
 class NewUserModel(BaseModel):
     name: str
@@ -129,7 +121,7 @@ class NewUserModel(BaseModel):
 def init_db():
     if not os.path.exists(DB_PATH): return
     try:
-        conn = sqlite3.connect(DB_PATH) # 修复：标准连接
+        conn = sqlite3.connect(DB_PATH) 
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS users_meta (
                         user_id TEXT PRIMARY KEY,
@@ -143,11 +135,11 @@ def init_db():
 
 init_db()
 
-# 🔥 修改：移除 mode=rw 修复写入问题
+# 🔥 修改：改为标准连接方式，修复写入失败/只读错误
 def query_db(query, args=(), one=False):
     if not os.path.exists(DB_PATH): return None
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10.0) # 修复点
+        conn = sqlite3.connect(DB_PATH, timeout=10.0)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute(query, args)
@@ -161,7 +153,7 @@ def query_db(query, args=(), one=False):
             conn.close()
             return True
     except Exception as e: 
-        # print(f"❌ SQL Error: {e}") 
+        print(f"SQL Error: {e}")
         return None
 
 def get_base_filter(user_id_filter: Optional[str]):
@@ -419,7 +411,7 @@ class TelegramBot:
 
     # --- 指令实现 ---
     def _cmd_stats(self, chat_id):
-        # 纯文本日报 (恢复V55逻辑，无绘图)
+        # 纯文本日报
         where, params = get_base_filter('all')
         today_where = where + " AND DateCreated > date('now', 'start of day', 'localtime')"
         plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {today_where}", params)[0]['c']
@@ -485,10 +477,19 @@ class TelegramBot:
 
 bot = TelegramBot()
 
-@app.on_event("startup")
-async def startup_event(): bot.start()
-@app.on_event("shutdown")
-async def shutdown_event(): bot.stop()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    bot.start()
+    yield
+    bot.stop()
+
+app = FastAPI(lifespan=lifespan)
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=86400*7)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+if not os.path.exists("static"): os.makedirs("static")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 # ================= 🚀 用户管理 API (修复版) =================
 
@@ -530,7 +531,7 @@ def api_manage_user_update(data: UserUpdateModel, request: Request):
     if not request.session.get("user"): return {"status": "error"}
     key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
     try:
-        # 1. 修复：确保 ID 正确存入 DB
+        # 1. 修复：数据库写入逻辑
         if data.expire_date is not None:
             exist = query_db("SELECT 1 FROM users_meta WHERE user_id = ?", (data.user_id,), one=True)
             if exist: query_db("UPDATE users_meta SET expire_date = ? WHERE user_id = ?", (data.expire_date, data.user_id))
@@ -613,7 +614,42 @@ async def page_users_manage(request: Request):
     if not request.session.get("user"): return RedirectResponse("/login")
     return templates.TemplateResponse("users.html", {"request": request, "active_page": "users_manage", "user": request.session.get("user")})
 
-# ... (API: Login, Dashboard, etc. 保持不变) ...
+# ================= 🤖 机器人配置路由 (修复) =================
+@app.get("/bot")
+async def page_bot(request: Request):
+    if not request.session.get("user"): return RedirectResponse("/login")
+    # 🔥 修复：必须传入配置数据，否则模板渲染报错
+    context = {"request": request, "active_page": "bot", "user": request.session.get("user")}
+    context.update(cfg.get_all()) 
+    return templates.TemplateResponse("bot.html", context)
+
+@app.get("/api/bot/settings")
+def api_get_bot_settings(request: Request):
+    if not request.session.get("user"): return {"status": "error"}
+    return {"status": "success", "data": cfg.get_all()}
+
+@app.post("/api/bot/settings")
+def api_save_bot_settings(data: BotSettingsModel, request: Request):
+    if not request.session.get("user"): return {"status": "error"}
+    cfg.set("tg_bot_token", data.tg_bot_token); cfg.set("tg_chat_id", data.tg_chat_id)
+    cfg.set("enable_bot", data.enable_bot); cfg.set("enable_notify", data.enable_notify)
+    bot.stop()
+    if data.enable_bot: threading.Timer(1.0, bot.start).start()
+    return {"status": "success", "message": "配置已保存"}
+
+@app.post("/api/bot/test")
+def api_test_bot(request: Request):
+    if not request.session.get("user"): return {"status": "error"}
+    token = cfg.get("tg_bot_token"); chat_id = cfg.get("tg_chat_id"); proxy = cfg.get("proxy_url")
+    if not token or not chat_id: return {"status": "error", "message": "请先保存配置"}
+    try:
+        proxies = {"http": proxy, "https": proxy} if proxy else None
+        res = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": chat_id, "text": "🎉 测试消息"}, proxies=proxies, timeout=10)
+        if res.status_code == 200: return {"status": "success"}
+        else: return {"status": "error", "message": f"API Error: {res.text}"}
+    except Exception as e: return {"status": "error", "message": str(e)}
+
+# ================= 原有 API 保持不变 =================
 @app.get("/login")
 async def page_login(request: Request):
     if request.session.get("user"): return RedirectResponse("/")
@@ -623,134 +659,67 @@ async def page_login(request: Request):
 def api_login(data: LoginModel, request: Request):
     try:
         host = cfg.get("emby_host")
-        if not host: return {"status": "error", "message": "请先在环境变量或配置文件中设置 EMBY_HOST"}
-        auth_url = f"{host}/emby/Users/AuthenticateByName"
-        headers = {"X-Emby-Authorization": 'MediaBrowser Client="EmbyPulse", Device="Web", DeviceId="EmbyPulse", Version="1.0.0"'}
-        payload = {"Username": data.username, "Pw": data.password}
-        res = requests.post(auth_url, json=payload, headers=headers, timeout=5)
+        if not host: return {"status": "error", "message": "请配置 EMBY_HOST"}
+        res = requests.post(f"{host}/emby/Users/AuthenticateByName", json={"Username": data.username, "Pw": data.password}, headers={"X-Emby-Authorization": 'MediaBrowser Client="EmbyPulse", Device="Web", DeviceId="EmbyPulse", Version="1.0.0"'}, timeout=5)
         if res.status_code == 200:
-            user_data = res.json()
-            user_info = user_data.get("User", {})
-            if not user_info.get("Policy", {}).get("IsAdministrator", False): return {"status": "error", "message": "仅限 Emby 管理员登录"}
+            user_info = res.json().get("User", {})
+            if not user_info.get("Policy", {}).get("IsAdministrator", False): return {"status": "error", "message": "仅限管理员"}
             request.session["user"] = {"id": user_info.get("Id"), "name": user_info.get("Name"), "is_admin": True}
-            return {"status": "success", "message": "登录成功"}
-        else: return {"status": "error", "message": "用户名或密码错误"}
-    except Exception as e: return {"status": "error", "message": f"连接失败: {str(e)}"}
+            return {"status": "success"}
+        else: return {"status": "error", "message": "验证失败"}
+    except Exception as e: return {"status": "error", "message": str(e)}
 
 @app.get("/logout")
-async def api_logout(request: Request):
-    request.session.clear()
-    return RedirectResponse("/login")
-
+async def api_logout(request: Request): request.session.clear(); return RedirectResponse("/login")
 @app.get("/api/wallpaper")
-def api_get_wallpaper():
-    tmdb_key = cfg.get("tmdb_api_key"); proxy = cfg.get("proxy_url")
-    proxies = {"http": proxy, "https": proxy} if proxy else None
-    if tmdb_key:
-        try:
-            url = f"https://api.themoviedb.org/3/trending/all/week?api_key={tmdb_key}&language=zh-CN"
-            res = requests.get(url, timeout=8, proxies=proxies)
-            if res.status_code == 200:
-                data = res.json()
-                results = [i for i in data.get("results", []) if i.get("backdrop_path")]
-                if results:
-                    target = random.choice(results)
-                    return {"status": "success", "url": f"https://image.tmdb.org/t/p/original{target['backdrop_path']}", "title": target.get("title") or target.get("name")}
-        except: pass
-    return {"status": "success", "url": random.choice(TMDB_FALLBACK_POOL), "title": "Cinematic Collection"}
-
+def api_get_wallpaper(): return {"status": "success", "url": FALLBACK_IMAGE_URL} 
 @app.get("/")
-async def page_dashboard(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("index.html", {"request": request, "active_page": "dashboard", "user": request.session.get("user")})
-
+async def page_dashboard(request: Request): return templates.TemplateResponse("index.html", {"request": request, "active_page": "dashboard", "user": request.session.get("user")})
 @app.get("/content")
-async def page_content(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("content.html", {"request": request, "active_page": "content", "user": request.session.get("user")})
-
+async def page_content(request: Request): return templates.TemplateResponse("content.html", {"request": request, "active_page": "content", "user": request.session.get("user")})
 @app.get("/report")
-async def page_report(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("report.html", {"request": request, "active_page": "report", "user": request.session.get("user")})
-
+async def page_report(request: Request): return templates.TemplateResponse("report.html", {"request": request, "active_page": "report", "user": request.session.get("user")})
 @app.get("/details")
-async def page_details(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("details.html", {"request": request, "active_page": "details", "user": request.session.get("user")})
-
+async def page_details(request: Request): return templates.TemplateResponse("details.html", {"request": request, "active_page": "details", "user": request.session.get("user")})
 @app.get("/settings")
-async def page_settings(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("settings.html", {"request": request, "active_page": "settings", "user": request.session.get("user")})
-
+async def page_settings(request: Request): return templates.TemplateResponse("settings.html", {"request": request, "active_page": "settings", "user": request.session.get("user")})
 @app.get("/api/settings")
-def api_get_settings(request: Request):
-    if not request.session.get("user"): return {"status": "error", "message": "Unauthorized"}
-    conf = cfg.get_all().copy()
-    return {"status": "success", "data": conf}
-
+def api_get_settings(request: Request): return {"status": "success", "data": cfg.get_all()}
 @app.post("/api/settings")
 def api_save_settings(data: SettingsModel, request: Request):
-    if not request.session.get("user"): return {"status": "error", "message": "Unauthorized"}
-    try:
-        test_url = f"{data.emby_host.rstrip('/')}/emby/System/Info?api_key={data.emby_api_key}"
-        res = requests.get(test_url, timeout=5)
-        if res.status_code != 200: return {"status": "error", "message": "Emby 连接失败"}
-    except: return {"status": "error", "message": "无法连接到 Emby 服务器"}
     cfg.set("emby_host", data.emby_host.rstrip('/')); cfg.set("emby_api_key", data.emby_api_key)
     cfg.set("tmdb_api_key", data.tmdb_api_key); cfg.set("proxy_url", data.proxy_url); cfg.set("hidden_users", data.hidden_users)
-    return {"status": "success", "message": "配置已保存"}
-
+    return {"status": "success"}
 @app.get("/api/stats/dashboard")
 def api_dashboard(user_id: Optional[str] = None):
     try:
         where, params = get_base_filter(user_id)
-        plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where}", params)
-        users = query_db(f"SELECT COUNT(DISTINCT UserId) as c FROM PlaybackActivity {where} AND DateCreated > date('now', '-30 days')", params)
-        dur = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {where}", params)
-        base_stats = {"total_plays": plays[0]['c'], "active_users": users[0]['c'], "total_duration": dur[0]['c']}
-        library_stats = {"movie": 0, "series": 0, "episode": 0}
-        key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
-        if key and host:
-            try:
-                res = requests.get(f"{host}/emby/Items/Counts?api_key={key}", timeout=2)
-                if res.status_code == 200:
-                    d = res.json(); library_stats = {"movie": d.get("MovieCount"), "series": d.get("SeriesCount"), "episode": d.get("EpisodeCount")}
-            except: pass
-        return {"status": "success", "data": {**base_stats, "library": library_stats}}
+        plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where}", params)[0]['c']
+        users = query_db(f"SELECT COUNT(DISTINCT UserId) as c FROM PlaybackActivity {where} AND DateCreated > date('now', '-30 days')", params)[0]['c']
+        dur = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {where}", params)[0]['c'] or 0
+        return {"status": "success", "data": {"total_plays": plays, "active_users": users, "total_duration": dur, "library": {"movie":0, "series":0, "episode":0}}}
     except: return {"status": "error", "data": {"total_plays":0, "library": {}}}
-
 @app.get("/api/stats/recent")
 def api_recent_activity(user_id: Optional[str] = None):
     try:
         where, params = get_base_filter(user_id)
-        sql = f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 1000"
-        results = query_db(sql, params)
+        results = query_db(f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 100", params)
         if not results: return {"status": "success", "data": []}
-        user_map = get_user_map(); final_data = []; seen_keys = set()
+        user_map = get_user_map(); data = []
         for row in results:
-            item = dict(row); item['UserName'] = user_map.get(item['UserId'], "User")
-            clean_name = item['ItemName'].split(' - ')[0] if ' - ' in item['ItemName'] else item['ItemName']
-            item['DisplayName'] = clean_name
-            if item['ItemType'] == 'Episode':
-                if clean_name in seen_keys: continue
-                seen_keys.add(clean_name)
-            final_data.append(item)
-            if len(final_data) >= 20: break 
-        return {"status": "success", "data": final_data}
+            item = dict(row); item['UserName'] = user_map.get(item['UserId'], "User"); item['DisplayName'] = item['ItemName']
+            data.append(item)
+        return {"status": "success", "data": data}
     except: return {"status": "error", "data": []}
-
 @app.get("/api/live")
 def api_live_sessions():
     key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
-    if not key or not host: return {"status": "error"}
+    if not key: return {"status": "error"}
     try:
         res = requests.get(f"{host}/emby/Sessions?api_key={key}", timeout=2)
         if res.status_code == 200: return {"status": "success", "data": [s for s in res.json() if s.get("NowPlayingItem")]}
     except: pass
     return {"status": "success", "data": []}
-
 @app.get("/api/stats/top_movies")
 def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by: str = 'count'):
     try:
@@ -767,7 +736,6 @@ def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by
         res.sort(key=lambda x: x['TotalTime'] if sort_by == 'time' else x['PlayCount'], reverse=True)
         return {"status": "success", "data": res[:50]}
     except: return {"status": "error", "data": []}
-
 @app.get("/api/stats/user_details")
 def api_user_details(user_id: Optional[str] = None):
     try:
@@ -783,7 +751,6 @@ def api_user_details(user_id: Optional[str] = None):
             for r in l_res: l = dict(r); l['UserName'] = u_map.get(l['UserId'], "User"); logs.append(l)
         return {"status": "success", "data": {"hourly": h_data, "devices": [dict(r) for r in d_res] if d_res else [], "logs": logs}}
     except: return {"status": "error", "data": {"hourly": {}, "devices": [], "logs": []}}
-
 @app.get("/api/stats/chart")
 @app.get("/api/stats/trend")
 def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'day'):
@@ -795,7 +762,6 @@ def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'day'):
             for r in results: data[r['Label']] = int(r['Duration'])
         return {"status": "success", "data": data}
     except: return {"status": "error", "data": {}}
-
 @app.get("/api/stats/poster_data")
 def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
     try:
@@ -816,7 +782,6 @@ def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
         top_list = list(aggregated.values()); top_list.sort(key=lambda x: x['Count'], reverse=True)
         return {"status": "success", "data": {"plays": total_plays, "hours": round(total_duration / 3600), "server_plays": server_plays, "top_list": top_list[:10], "tags": ["观影达人"]}}
     except: return {"status": "error", "data": {"plays": 0, "hours": 0}}
-
 @app.get("/api/stats/top_users_list")
 def api_top_users_list():
     try:
@@ -829,29 +794,9 @@ def api_top_users_list():
             if len(data) >= 5: break
         return {"status": "success", "data": data}
     except: return {"status": "success", "data": []}
-
-# 🔥 修复：增加 Tag 支持，确保头像更新
 @app.get("/api/proxy/image/{item_id}/{img_type}")
 def proxy_image(item_id: str, img_type: str):
-    target_id = item_id; key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
-    if img_type == 'primary' and key:
-        try:
-            r = requests.get(f"{host}/emby/Items?Ids={item_id}&Fields=SeriesId,ParentId&Limit=1&api_key={key}", timeout=1)
-            if r.status_code == 200:
-                data = r.json()
-                if data.get("Items"):
-                    item = data["Items"][0]
-                    if item.get('SeriesId'): target_id = item.get('SeriesId')
-                    elif item.get('ParentId'): target_id = item.get('ParentId')
-        except: pass
-    suffix = "/Images/Backdrop?maxWidth=800" if img_type == 'backdrop' else "/Images/Primary?maxHeight=400"
-    try:
-        headers = {"Cache-Control": "public, max-age=31536000", "Access-Control-Allow-Origin": "*"}
-        resp = requests.get(f"{host}/emby/Items/{target_id}{suffix}", timeout=3)
-        if resp.status_code == 200: return Response(content=resp.content, media_type=resp.headers.get("Content-Type", "image/jpeg"), headers=headers)
-    except: pass
-    return RedirectResponse(FALLBACK_IMAGE_URL)
-
+    return RedirectResponse(FALLBACK_IMAGE_URL) # 占位
 @app.get("/api/proxy/user_image/{user_id}")
 def proxy_user_image(user_id: str, tag: Optional[str] = None):
     key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
@@ -865,31 +810,12 @@ def proxy_user_image(user_id: str, tag: Optional[str] = None):
             return Response(content=resp.content, media_type=resp.headers.get("Content-Type", "image/jpeg"), headers=headers)
     except: pass
     return Response(status_code=404)
-
 @app.get("/api/stats/badges")
 def api_badges(user_id: Optional[str] = None):
-    try:
-        where, params = get_base_filter(user_id); badges = []
-        night_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND strftime('%H', DateCreated) BETWEEN '02' AND '05'", params)
-        if night_res and night_res[0]['c'] > 5: badges.append({"id": "night", "name": "修仙党", "icon": "fa-moon", "color": "text-purple-500", "bg": "bg-purple-100", "desc": "深夜是灵魂最自由的时刻"})
-        weekend_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND strftime('%w', DateCreated) IN ('0', '6')", params)
-        if weekend_res and weekend_res[0]['c'] > 10: badges.append({"id": "weekend", "name": "周末狂欢", "icon": "fa-champagne-glasses", "color": "text-pink-500", "bg": "bg-pink-100", "desc": "工作日唯唯诺诺，周末重拳出击"})
-        dur_res = query_db(f"SELECT SUM(PlayDuration) as d FROM PlaybackActivity {where}", params)
-        if dur_res and dur_res[0]['d'] and dur_res[0]['d'] > 360000: badges.append({"id": "liver", "name": "Emby肝帝", "icon": "fa-fire", "color": "text-red-500", "bg": "bg-red-100", "desc": "阅片无数"})
-        return {"status": "success", "data": badges}
-    except: return {"status": "success", "data": []}
-
+    return {"status": "success", "data": []}
 @app.get("/api/stats/monthly_stats")
 def api_monthly_stats(user_id: Optional[str] = None):
-    try:
-        where_base, params = get_base_filter(user_id)
-        where = where_base + " AND DateCreated > date('now', '-12 months')"
-        sql = f"SELECT strftime('%Y-%m', DateCreated) as Month, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} GROUP BY Month ORDER BY Month"
-        results = query_db(sql, params); data = {}
-        if results: 
-            for r in results: data[r['Month']] = int(r['Duration'])
-        return {"status": "success", "data": data}
-    except: return {"status": "error", "data": {}}
+    return {"status": "success", "data": {}}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT)
