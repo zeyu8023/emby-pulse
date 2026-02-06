@@ -8,7 +8,8 @@ import os
 from app.core.config import PORT, SECRET_KEY, CONFIG_DIR, FONT_DIR
 from app.core.database import init_db
 from app.services.bot_service import bot
-from app.routers import views, auth, users, stats, bot as bot_router, system, proxy, report
+# 🔥 引入新路由 webhook
+from app.routers import views, auth, users, stats, bot as bot_router, system, proxy, report, webhook
 
 # 初始化目录和数据库
 if not os.path.exists("static"): os.makedirs("static")
@@ -43,6 +44,8 @@ app.include_router(bot_router.router)
 app.include_router(system.router)
 app.include_router(proxy.router)
 app.include_router(report.router)
+# 🔥 注册 webhook 路由
+app.include_router(webhook.router)
 
 if __name__ == "__main__":
     import uvicorn

@@ -7,6 +7,10 @@ import re
 from app.core.config import cfg, REPORT_COVER_URL
 from app.core.database import query_db, get_base_filter
 from app.services.report_service import report_gen, HAS_PIL
+import logging
+
+# 初始化 Logger
+logger = logging.getLogger("uvicorn")
 
 class TelegramBot:
     def __init__(self):
@@ -40,12 +44,11 @@ class TelegramBot:
         if not key or not host: return None
         try:
             url = f"{host}/emby/Items/{item_id}/Images/{img_type}?maxHeight=800&maxWidth=1200&quality=90&api_key={key}"
-            res = requests.get(url, timeout=5)
+            res = requests.get(url, timeout=10)
             if res.status_code == 200: return io.BytesIO(res.content)
         except: pass
         return None
 
-    # 🔥 修复了语法错误的 send_photo
     def send_photo(self, chat_id, photo_io, caption, parse_mode="HTML"):
         token = cfg.get("tg_bot_token")
         if not token: return
@@ -154,6 +157,83 @@ class TelegramBot:
         else:
             self._cmd_stats(str(cfg.get("tg_chat_id")))
         return True
+
+    # 🔥 新增：入库通知推送逻辑
+    def push_new_media(self, item_id):
+        if not cfg.get("enable_notify") or not cfg.get("tg_chat_id"): return
+        
+        chat_id = str(cfg.get("tg_chat_id"))
+        host = cfg.get("emby_host")
+        key = cfg.get("emby_api_key")
+
+        # 1. 稍微等待几秒，确保 Emby 完成了元数据刮削
+        time.sleep(5) 
+
+        try:
+            # 2. 主动查询 Emby API 获取详情
+            url = f"{host}/emby/Items/{item_id}?api_key={key}"
+            res = requests.get(url, timeout=10)
+            if res.status_code != 200:
+                print(f"查询 Item 详情失败: {res.text}")
+                return
+            
+            item = res.json()
+            
+            # 3. 提取并格式化信息
+            name = item.get("Name", "")
+            type_raw = item.get("Type", "Movie")
+            overview = item.get("Overview", "暂无简介...")
+            community_rating = item.get("CommunityRating", "N/A")
+            
+            # 截断过长的简介
+            if len(overview) > 150:
+                overview = overview[:145] + "..."
+
+            # 类型与标题处理
+            type_cn = "电影"
+            display_title = name
+            
+            if type_raw == "Episode":
+                type_cn = "剧集"
+                series_name = item.get("SeriesName", "")
+                season_idx = item.get("ParentIndexNumber", 1)
+                episode_idx = item.get("IndexNumber", 1)
+                # 格式化 S01 E01
+                season_str = f"S{str(season_idx).zfill(2)}"
+                episode_str = f"E{str(episode_idx).zfill(2)}"
+                display_title = f"{series_name} {season_str} {episode_str}"
+                
+                # 如果单集有特定标题且不等于集数，加上
+                if name and name != f"Episode {episode_idx}" and name != f"Episode {episode_idx}": 
+                    display_title += f" {name}"
+                    
+            elif type_raw == "Season":
+                return # 季度入库不发
+                
+            # 4. 构建消息文本
+            current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            caption = (
+                f"📺 <b>新入库 {type_cn} {display_title}</b>\n"
+                f"⭐ 评分：{community_rating}/10 ｜ 📚 类型：{type_cn}\n"
+                f"🕒 时间：{current_time}\n\n"
+                f"📝 剧情：{overview}"
+            )
+
+            # 5. 获取图片并发送
+            # 优先使用 Primary 图片
+            if item.get("ImageTags", {}).get("Primary"):
+                img_io = self._download_emby_image(item_id, 'Primary')
+                if img_io:
+                    self.send_photo(chat_id, img_io, caption)
+                else:
+                    self.send_message(chat_id, caption)
+            else:
+                self.send_message(chat_id, caption)
+                
+            print(f"入库通知已发送: {display_title}")
+
+        except Exception as e:
+            print(f"发送入库通知异常: {e}")
 
     def _cmd_stats(self, chat_id):
         if HAS_PIL:
