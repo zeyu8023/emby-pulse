@@ -6,11 +6,10 @@ import requests
 import datetime
 import json
 import time
-import uuid  # 引入 UUID 生成随机数
 
 router = APIRouter()
 
-# Emby 本地默认认证提供商的类名
+# Emby 本地默认认证提供商
 DEFAULT_AUTH_PROVIDER = "Emby.Server.Implementations.Library.DefaultAuthenticationProvider"
 
 @router.get("/api/manage/users")
@@ -47,34 +46,42 @@ def api_manage_user_update(data: UserUpdateModel, request: Request):
             if exist: query_db("UPDATE users_meta SET expire_date = ? WHERE user_id = ?", (data.expire_date, data.user_id))
             else: query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (data.user_id, data.expire_date, datetime.datetime.now().isoformat()))
         
-        # 🔥 Step 1: 制造“脏数据”强制清洗
+        # 🔥 Step 1: 改名重塑 (强制 Emby 写库)
         if data.password or data.is_disabled is not None:
             user_res = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
             if user_res.status_code == 200:
                 user_dto = user_res.json()
+                original_name = user_dto["Name"]
                 
-                # 生成一个随机标记，确保数据与数据库中不同，强制触发写入
-                random_tag = str(uuid.uuid4())[:8]
-                print(f"🧹 [Step 1] Force Dirty Write (Tag: {random_tag})...")
+                # 只有当需要净化时才执行改名，避免不必要的震荡
+                # 但为了修复目前的死局，我们放宽条件：只要是改密码，就强制执行一次重塑
+                print(f"🧹 [Step 1] Renaming User to Force DB Write...")
                 
-                # 1. 强制本地认证
+                # --- 动作 A: 改名为 xxx_repair + 清除云端字段 ---
+                user_dto["Name"] = f"{original_name}_repair"
                 user_dto["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
-                
-                # 2. 清除云端字段
-                user_dto["ConnectUserId"] = ""  
-                user_dto["ConnectUserName"] = "" 
+                user_dto["ConnectUserId"] = ""
+                user_dto["ConnectUserName"] = ""
                 user_dto["ConnectLinkType"] = ""
-                
-                # 3. 🔥 核心：修改 SortName 为随机值，迫使 Emby 认为数据变了，必须写库
-                # 如果不改这个，Emby 可能会因为其他字段没变而跳过写入（导致 3ms 耗时）
-                user_dto["SortName"] = f"FIX_{random_tag}" 
-                
-                # 4. 移除干扰
                 if "Password" in user_dto: del user_dto["Password"]
+                
+                r1 = requests.post(f"{host}/emby/Users/{data.user_id}?api_key={key}", json=user_dto)
+                print(f"   -> Rename Status: {r1.status_code} (Expect >20ms)")
 
-                # 提交更新
-                clean_res = requests.post(f"{host}/emby/Users/{data.user_id}?api_key={key}", json=user_dto)
-                print(f"   -> Cleanse Status: {clean_res.status_code}")
+                # --- 动作 B: 改回原名 ---
+                # 必须重新获取 User 对象，因为 Version Hash 变了
+                time.sleep(0.2)
+                user_res_2 = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
+                if user_res_2.status_code == 200:
+                    user_dto_2 = user_res_2.json()
+                    user_dto_2["Name"] = original_name # 改回去
+                    # 再次确保这些字段为空
+                    user_dto_2["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
+                    user_dto_2["ConnectUserId"] = ""
+                    user_dto_2["ConnectUserName"] = ""
+                    
+                    r2 = requests.post(f"{host}/emby/Users/{data.user_id}?api_key={key}", json=user_dto_2)
+                    print(f"   -> Restore Status: {r2.status_code}")
 
         # 2. 刷新策略
         if data.is_disabled is not None:
@@ -88,17 +95,10 @@ def api_manage_user_update(data: UserUpdateModel, request: Request):
                 requests.post(f"{host}/emby/Users/{data.user_id}/Policy?api_key={key}", json=policy)
 
         # 3. 🔥 Step 3: 管理员强制改密
-        # 此时账号已经是本地的了（因为 Step 1 强制写库了）
         if data.password:
             print(f"🔑 [Step 3] Force Admin Password Reset...")
-            
-            # 给数据库一点时间同步
             time.sleep(0.3)
             
-            # 直接使用标准的管理员强制重置
-            # Id: 用户ID
-            # NewPassword: 新密码
-            # ResetPassword: True (告诉 Emby 这是一个强制覆盖操作)
             payload = { 
                 "Id": data.user_id, 
                 "NewPassword": data.password, 
@@ -109,15 +109,6 @@ def api_manage_user_update(data: UserUpdateModel, request: Request):
             print(f"   -> Emby Final Response: {r.status_code}")
             if r.status_code not in [200, 204]:
                 return {"status": "error", "message": f"改密失败: {r.text}"}
-            
-            # (可选) 恢复 SortName，为了美观
-            # 虽然不恢复也不影响使用，用户平时看不到 SortName
-            try:
-                restore_dto = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}").json()
-                if restore_dto.get("SortName", "").startswith("FIX_"):
-                    restore_dto["SortName"] = restore_dto["Name"]
-                    requests.post(f"{host}/emby/Users/{data.user_id}?api_key={key}", json=restore_dto)
-            except: pass
 
         return {"status": "success", "message": "更新成功"}
     except Exception as e: 
