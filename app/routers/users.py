@@ -9,7 +9,7 @@ import time
 
 router = APIRouter()
 
-# Emby 本地默认认证提供商的类名 (这是强制本地认证的关键)
+# Emby 本地默认认证提供商的类名
 DEFAULT_AUTH_PROVIDER = "Emby.Server.Implementations.Library.DefaultAuthenticationProvider"
 
 @router.get("/api/manage/users")
@@ -40,35 +40,49 @@ def api_manage_user_update(data: UserUpdateModel, request: Request):
     print(f"📝 Update User Request: {data.user_id}")
     
     try:
-        # 1. 更新数据库有效期 (本地业务)
+        # 1. 更新数据库有效期
         if data.expire_date is not None:
             exist = query_db("SELECT 1 FROM users_meta WHERE user_id = ?", (data.user_id,), one=True)
             if exist: query_db("UPDATE users_meta SET expire_date = ? WHERE user_id = ?", (data.expire_date, data.user_id))
             else: query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (data.user_id, data.expire_date, datetime.datetime.now().isoformat()))
         
-        # 🔥 Step 1: 净化账号 (强制转为本地认证)
-        # 只要涉及改密或改状态，就执行此检查，确保万无一失
+        # 🔥 Step 1: 暴力净化 (针对 2ms 假成功问题)
+        # 只要涉及改密或改状态，就强制清洗，确保环境纯净
         if data.password or data.is_disabled is not None:
             user_res = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
             if user_res.status_code == 200:
                 user_dto = user_res.json()
                 
-                # 检查是否需要净化：如果不是默认认证，或者有云端ID残留
-                needs_purge = (user_dto.get("AuthenticationProviderId") != DEFAULT_AUTH_PROVIDER) or \
-                              (user_dto.get("ConnectUserId") is not None)
+                # 检查是否有点“云端”的味道
+                has_cloud_taint = (user_dto.get("AuthenticationProviderId") != DEFAULT_AUTH_PROVIDER) or \
+                                  user_dto.get("ConnectUserId") or \
+                                  user_dto.get("ConnectUserName") # 🔥 关键新增：检查用户名
                 
-                if needs_purge:
-                    print(f"🧹 [Step 1] Purging cloud auth (Switching to Local)...")
-                    user_dto["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
-                    user_dto["ConnectUserId"] = None
-                    user_dto["ConnectLinkType"] = None
-                    # 删除 Password 字段防止干扰
-                    if "Password" in user_dto: del user_dto["Password"]
+                # 为了保险，即使看起来没问题，也强制刷一遍（如果提供了密码）
+                if has_cloud_taint or data.password:
+                    print(f"🧹 [Step 1] Force Purging ALL Cloud Fields...")
                     
+                    # 1. 强制指定本地认证
+                    user_dto["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
+                    
+                    # 2. 🔥 关键新增：使用空字符串 "" 强制覆盖，防止 null 被忽略
+                    user_dto["ConnectUserId"] = ""  
+                    user_dto["ConnectUserName"] = "" 
+                    user_dto["ConnectLinkType"] = "LinkedUser" # 有时候设为 LinkedUser + 空ID 才能触发重置
+                    
+                    # 3. 移除干扰项
+                    if "Password" in user_dto: del user_dto["Password"]
+                    if "Configuration" in user_dto:
+                        if "Password" in user_dto["Configuration"]: del user_dto["Configuration"]["Password"]
+
+                    # 4. 🔥 技巧：修改 SortName 强制触发数据库 Dirty Flag (确保写入)
+                    # 赋予一个临时 SortName，或者重置为 Name
+                    user_dto["SortName"] = user_dto["Name"]
+
                     clean_res = requests.post(f"{host}/emby/Users/{data.user_id}?api_key={key}", json=user_dto)
                     print(f"   -> Cleanse Status: {clean_res.status_code}")
 
-        # 2. 刷新策略 (解禁/重置状态)
+        # 2. 刷新策略
         if data.is_disabled is not None:
             print(f"🔧 [Step 2] Updating Policy...")
             p_res = requests.get(f"{host}/emby/Users/{data.user_id}?api_key={key}")
@@ -79,25 +93,20 @@ def api_manage_user_update(data: UserUpdateModel, request: Request):
                     policy['LoginAttemptsBeforeLockout'] = -1 
                 requests.post(f"{host}/emby/Users/{data.user_id}/Policy?api_key={key}", json=policy)
 
-        # 3. 🔥 Step 3: 归零重启法 (解决 1ms/2ms 假成功问题)
+        # 3. 🔥 Step 3: 归零重启法
         if data.password:
-            print(f"🔑 [Step 3] Executing Zero-Reset Logic...")
+            print(f"🔑 [Step 3] Resetting Password...")
             
-            # (A) 归零：强制置空密码
-            # ResetPassword=True 会把密码标记为重置/空，利用管理员权限强行覆盖哈希
-            print(f"   -> (A) Zeroing out password (ResetPassword=True)...")
-            payload_zero = { 
-                "Id": data.user_id, 
-                "NewPassword": "", 
-                "ResetPassword": True 
-            }
-            r_zero = requests.post(f"{host}/emby/Users/{data.user_id}/Password?api_key={key}", json=payload_zero)
-            print(f"   -> Zero Response: {r_zero.status_code}")
+            # (A) 归零
+            print(f"   -> (A) Zeroing out password...")
+            payload_zero = { "Id": data.user_id, "NewPassword": "", "ResetPassword": True }
+            requests.post(f"{host}/emby/Users/{data.user_id}/Password?api_key={key}", json=payload_zero)
             
-            # (B) 填入：正向设置密码
-            # 现在旧密码被视为空，我们用 CurrentPassword="" 来正向修改
-            # ResetPassword=False 告诉 Emby 这是正式修改，不是重置标记
-            print(f"   -> (B) Setting new password (ResetPassword=False)...")
+            # 这里的 Sleep 很重要，给数据库一点喘息时间
+            time.sleep(0.2)
+            
+            # (B) 填入
+            print(f"   -> (B) Setting new password...")
             payload_set = { 
                 "Id": data.user_id, 
                 "CurrentPassword": "", 
@@ -126,24 +135,25 @@ def api_manage_user_new(data: NewUserModel, request: Request):
         if res.status_code != 200: return {"status": "error", "message": f"创建失败: {res.text}"}
         new_id = res.json()['Id']
         
-        # 2. 强制本地化
+        # 2. 强制本地化 (使用同样的强力清洗)
         user_res = requests.get(f"{host}/emby/Users/{new_id}?api_key={key}")
         if user_res.status_code == 200:
             user_dto = user_res.json()
             user_dto["AuthenticationProviderId"] = DEFAULT_AUTH_PROVIDER
+            user_dto["ConnectUserId"] = ""
+            user_dto["ConnectUserName"] = ""
             requests.post(f"{host}/emby/Users/{new_id}?api_key={key}", json=user_dto)
 
-        # 3. 策略初始化
+        # 3. 策略
         requests.post(f"{host}/emby/Users/{new_id}/Policy?api_key={key}", json={"IsDisabled": False, "LoginAttemptsBeforeLockout": -1})
         
-        # 4. 设置初始密码 (使用同样的归零逻辑)
+        # 4. 设置初始密码
         if data.password:
-            # 先置空
             requests.post(f"{host}/emby/Users/{new_id}/Password?api_key={key}", json={"NewPassword": "", "ResetPassword": True})
-            # 再设置
+            time.sleep(0.1)
             requests.post(f"{host}/emby/Users/{new_id}/Password?api_key={key}", json={"CurrentPassword": "", "NewPassword": data.password, "ResetPassword": False})
 
-        # 5. 记录数据库
+        # 5. 记录
         if data.expire_date:
             query_db("INSERT INTO users_meta (user_id, expire_date, created_at) VALUES (?, ?, ?)", (new_id, data.expire_date, datetime.datetime.now().isoformat()))
             
