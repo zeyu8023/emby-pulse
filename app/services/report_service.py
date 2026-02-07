@@ -14,7 +14,7 @@ except ImportError:
     print("⚠️ Pillow not found. Report generation disabled.")
 
 def get_user_map_internal():
-    # 简单的内部获取，避免循环引用
+    """获取所有用户的 ID -> Name 映射"""
     user_map = {}
     key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
     if key and host:
@@ -32,7 +32,6 @@ class ReportGenerator:
     def check_font(self):
         if not os.path.exists(FONT_PATH):
             try:
-                # 确保父目录存在
                 os.makedirs(os.path.dirname(FONT_PATH), exist_ok=True)
                 res = requests.get(FONT_URL, timeout=30)
                 if res.status_code == 200:
@@ -48,13 +47,14 @@ class ReportGenerator:
         theme = THEMES.get(theme_name, THEMES["black_gold"])
         width, height = 800, 1200
         
-        # 获取基础过滤条件 (处理 UserId 和隐藏用户)
+        # 1. 获取 ID 映射表 (用于把 UserId 转成名字)
+        user_map = get_user_map_internal()
+
+        # 2. 构建 SQL
         where_base, params = get_base_filter(user_id)
-        
         date_filter = ""
         title_period = "全量"
         
-        # 多周期支持逻辑
         if period == 'week': 
             date_filter = " AND DateCreated > date('now', '-7 days')"
             title_period = "本周观影周报"
@@ -67,13 +67,10 @@ class ReportGenerator:
         elif period == 'day': 
             date_filter = " AND DateCreated > date('now', 'start of day')"
             title_period = "今日日报"
-        else: 
-            title_period = "全量观影报告"
-
+        
         full_where = where_base + date_filter
         
-        # 1. 基础数据查询 (适配插件列名 PlayDuration)
-        # 注意：Emby插件表 PlayDuration 单位通常是秒
+        # 3. 执行查询 (修正：查 UserId 而不是 UserName)
         plays_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {full_where}", params)
         plays = plays_res[0]['c'] if plays_res else 0
         
@@ -81,18 +78,18 @@ class ReportGenerator:
         dur = dur_res[0]['c'] if dur_res and dur_res[0]['c'] else 0
         hours = round(dur / 3600, 1)
         
-        # 获取用户名
-        user_name = "Emby Server"
+        # 顶部用户名
+        display_name = "Emby Server"
         if user_id != 'all': 
-            user_name = get_user_map_internal().get(user_id, "User")
+            display_name = user_map.get(user_id, "User")
         
-        # 2. 排行榜查询 (适配插件列名 ItemName, ItemId)
+        # 排行榜 (ItemName 通常有, PlayDuration 也有)
         top_list = []
         if plays > 0:
-            sql = f"SELECT ItemName, ItemId, COUNT(*) as C, SUM(PlayDuration) as D FROM PlaybackActivity {full_where} GROUP BY ItemName ORDER BY C DESC LIMIT 8"
+            sql = f"SELECT ItemName, COUNT(*) as C FROM PlaybackActivity {full_where} GROUP BY ItemName ORDER BY C DESC LIMIT 8"
             top_list = query_db(sql, params)
 
-        # 3. 绘图逻辑
+        # 4. 绘图
         try: 
             font_lg = ImageFont.truetype(FONT_PATH, 60)
             font_md = ImageFont.truetype(FONT_PATH, 40)
@@ -104,21 +101,20 @@ class ReportGenerator:
         img = Image.new('RGB', (width, height), theme['bg'])
         draw = ImageDraw.Draw(img)
         
-        # 头部文字
-        draw.text((40, 60), user_name, font=font_lg, fill=theme['text'])
-        draw.text((40, 140), f"{title_period}", font=font_sm, fill=theme['text'])
+        # 头部
+        draw.text((40, 60), display_name, font=font_lg, fill=theme['text'])
+        draw.text((40, 140), title_period, font=font_sm, fill=theme['text'])
         
-        # 播放次数卡片
+        # 统计卡片
         self.draw_rounded_rect(draw, (40, 220, 390, 370), theme['card'])
         draw.text((70, 250), str(plays), font=font_lg, fill=theme['highlight'])
         draw.text((70, 320), "播放次数", font=font_sm, fill=theme['text'])
         
-        # 专注时长卡片
         self.draw_rounded_rect(draw, (410, 220, 760, 370), theme['card'])
         draw.text((440, 250), str(hours), font=font_lg, fill=theme['highlight'])
         draw.text((440, 320), "专注时长(H)", font=font_sm, fill=theme['text'])
 
-        # 榜单列表
+        # 榜单
         list_y = 420
         draw.text((40, list_y), "🏆 内容风云榜", font=font_md, fill=theme['text'])
         item_y = list_y + 70
@@ -127,25 +123,22 @@ class ReportGenerator:
             for i, item in enumerate(top_list):
                 self.draw_rounded_rect(draw, (40, item_y, 760, item_y+60), theme['card'], radius=10)
                 
-                # 截取过长标题
-                name_raw = item['ItemName']
-                name = name_raw[:20] + "..." if len(name_raw) > 20 else name_raw
+                name = item['ItemName']
+                if len(name) > 20: name = name[:19] + "..."
                 
                 draw.text((60, item_y+15), str(i+1), font=font_sm, fill=theme['highlight'])
                 draw.text((120, item_y+15), name, font=font_sm, fill=theme['text'])
                 
-                # 右侧显示次数
-                count_txt = f"{item['C']}次"
-                # 简单右对齐处理
-                try: w = draw.textlength(count_txt, font=font_sm)
+                count = f"{item['C']}次"
+                # 右对齐
+                try: w = draw.textlength(count, font=font_sm)
                 except: w = 40
-                draw.text((720-w, item_y+15), count_txt, font=font_sm, fill=theme['text'])
+                draw.text((720-w, item_y+15), count, font=font_sm, fill=theme['text'])
                 
                 item_y += 70
         else:
             draw.text((300, item_y+50), "暂无数据", font=font_md, fill=(100,100,100))
 
-        # 底部水印
         draw.text((250, 1150), "Generated by EmbyPulse", font=font_xs, fill=(80, 80, 80))
 
         output = io.BytesIO()

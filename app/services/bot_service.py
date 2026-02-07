@@ -17,6 +17,8 @@ class TelegramBot:
         self.schedule_thread = None 
         self.offset = 0
         self.last_check_min = -1
+        # 简单的用户 ID 缓存
+        self.user_cache = {}
         
     def start(self):
         if self.running: return
@@ -27,13 +29,29 @@ class TelegramBot:
         self.poll_thread.start()
         self.schedule_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
         self.schedule_thread.start()
-        print("🤖 Bot Service Started (Plugin Native Mode)")
+        print("🤖 Bot Service Started (Fixed Schema Mode)")
 
     def stop(self): self.running = False
 
     def _get_proxies(self):
         proxy = cfg.get("proxy_url")
         return {"http": proxy, "https": proxy} if proxy else None
+
+    # 🔥 新增：ID 转 用户名
+    def _get_username(self, user_id):
+        if user_id in self.user_cache: return self.user_cache[user_id]
+        
+        # 没缓存，去 API 查
+        key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+        if not key or not host: return user_id
+        try:
+            # 查所有用户刷新缓存
+            res = requests.get(f"{host}/emby/Users?api_key={key}", timeout=2)
+            if res.status_code == 200:
+                for u in res.json():
+                    self.user_cache[u['Id']] = u['Name']
+        except: pass
+        return self.user_cache.get(user_id, "Unknown User")
 
     def _get_location(self, ip):
         if not ip or ip in ['127.0.0.1', '::1', '0.0.0.0']: return "本地连接"
@@ -86,14 +104,14 @@ class TelegramBot:
 
     # ================= 业务逻辑 =================
 
-    # 🔥 纯读取模式：不写入数据库
+    # 只读模式，不需要写入
     def save_playback_activity(self, data):
         pass 
 
     def push_playback_event(self, data, action="start"):
         if not cfg.get("enable_notify") or not cfg.get("tg_chat_id"): return
         try:
-            cid = str(cfg.get("tg_chat_id"))
+            chat_id = str(cfg.get("tg_chat_id"))
             user = data.get("User", {})
             item = data.get("Item", {})
             session = data.get("Session", {})
@@ -126,21 +144,19 @@ class TelegramBot:
                 f"🕒 时间：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             )
             img = self._download_emby_image(item.get("Id"), 'Backdrop') or self._download_emby_image(item.get("Id"), 'Primary')
-            if img: self.send_photo(cid, img, msg)
+            if img: self.send_photo(chat_id, img, msg)
             else: self.send_message(cid, msg)
-        except Exception as e: logger.error(f"Push Playback Error: {e}")
+        except: pass
 
     def push_new_media(self, item_id, fallback_item=None):
         if not cfg.get("enable_library_notify") or not cfg.get("tg_chat_id"): return
         cid = str(cfg.get("tg_chat_id")); host = cfg.get("emby_host"); key = cfg.get("emby_api_key")
 
-        # 优先使用 Webhook 里的图
         direct_tag = None
         if fallback_item:
             direct_tag = fallback_item.get("ImageTags", {}).get("Primary")
 
-        if direct_tag:
-            item = fallback_item
+        if direct_tag: item = fallback_item
         else:
             item = None
             for i in range(3):
@@ -156,57 +172,35 @@ class TelegramBot:
         if not final: return
 
         try:
-            name = final.get("Name", "未知")
-            type_raw = final.get("Type", "Movie")
-            overview = final.get("Overview", "暂无简介...")
-            rating = final.get("CommunityRating", "N/A")
-            year = final.get("ProductionYear", "")
+            name = final.get("Name", "")
+            if final.get("Type") == "Episode":
+                name = f"{final.get('SeriesName','')} S{str(final.get('ParentIndexNumber',1)).zfill(2)}E{str(final.get('IndexNumber',1)).zfill(2)}"
             
-            if len(overview) > 150: overview = overview[:140] + "..."
-            
-            type_cn = "电影"
-            display_title = name
-            if type_raw == "Episode":
-                type_cn = "剧集"
-                s_name = final.get("SeriesName", "")
-                s_idx = final.get("ParentIndexNumber", 1)
-                e_idx = final.get("IndexNumber", 1)
-                display_title = f"{s_name} S{str(s_idx).zfill(2)}E{str(e_idx).zfill(2)}"
-                if name and "Episode" not in name: display_title += f" {name}"
-            elif type_raw == "Series": type_cn = "剧集"
-
             caption = (
-                f"📺 <b>新入库 {type_cn}</b>\n{display_title} ({year})\n\n"
-                f"⭐ 评分：{rating}/10\n"
-                f"🕒 时间：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-                f"📝 剧情：{overview}"
+                f"📺 <b>新入库 {final.get('Type','影视')}</b>\n{name} ({final.get('ProductionYear','')})\n\n"
+                f"⭐ 评分：{final.get('CommunityRating','N/A')}/10\n"
+                f"📝 剧情：{final.get('Overview','暂无简介...')[:140]}..."
             )
-
             img_tag = final.get("ImageTags", {}).get("Primary")
             img_io = self._download_emby_image(item_id, 'Primary', image_tag=img_tag)
             
-            if img_io:
-                self.send_photo(cid, img_io, caption)
-            else:
-                self.send_photo(cid, REPORT_COVER_URL, caption)
-
-        except Exception as e: logger.error(f"Push New Media Error: {e}")
+            if img_io: self.send_photo(cid, img_io, caption)
+            else: self.send_photo(cid, REPORT_COVER_URL, caption)
+        except: pass
 
     # ================= 指令系统 =================
 
     def _set_commands(self):
         token = cfg.get("tg_bot_token")
-        cmds = [
-            {"command": "stats", "description": "📊 今日日报"},
-            {"command": "weekly", "description": "📅 本周周报"},
-            {"command": "monthly", "description": "🗓️ 本月月报"},
-            {"command": "yearly", "description": "📜 年度总结"},
-            {"command": "now", "description": "🟢 正在播放"},
-            {"command": "latest", "description": "🆕 最近入库"},
-            {"command": "recent", "description": "📜 播放历史"},
-            {"command": "check", "description": "📡 系统检查"},
-            {"command": "help", "description": "🤖 帮助菜单"}
-        ]
+        cmds = [{"command": "stats", "description": "📊 今日日报"},
+                {"command": "weekly", "description": "📅 本周周报"},
+                {"command": "monthly", "description": "🗓️ 本月月报"},
+                {"command": "yearly", "description": "📜 年度总结"},
+                {"command": "now", "description": "🟢 正在播放"},
+                {"command": "latest", "description": "🆕 最近入库"},
+                {"command": "recent", "description": "📜 播放历史"},
+                {"command": "check", "description": "📡 系统检查"},
+                {"command": "help", "description": "🤖 帮助菜单"}]
         try: requests.post(f"https://api.telegram.org/bot{token}/setMyCommands", json={"commands": cmds}, proxies=self._get_proxies(), timeout=10)
         except: pass
 
@@ -218,66 +212,54 @@ class TelegramBot:
                 if res.status_code == 200:
                     for u in res.json().get("result", []):
                         self.offset = u["update_id"] + 1
-                        if "message" in u: 
-                            chat_id = str(u["message"]["chat"]["id"])
-                            if admin_id and chat_id != admin_id: continue 
-                            self._handle_message(u["message"], chat_id)
+                        if "message" in u:
+                            cid = str(u["message"]["chat"]["id"])
+                            if admin_id and cid != admin_id: continue
+                            self._handle_message(u["message"], cid)
                 else: time.sleep(5)
             except: time.sleep(5)
 
-    def _handle_message(self, msg, chat_id):
+    def _handle_message(self, msg, cid):
         text = msg.get("text", "").strip()
-        if text.startswith("/stats"): self._cmd_stats(chat_id, 'day')
-        elif text.startswith("/weekly"): self._cmd_stats(chat_id, 'week')
-        elif text.startswith("/monthly"): self._cmd_stats(chat_id, 'month')
-        elif text.startswith("/yearly"): self._cmd_stats(chat_id, 'year')
-        elif text.startswith("/now"): self._cmd_now(chat_id)
-        elif text.startswith("/latest"): self._cmd_latest(chat_id)
-        elif text.startswith("/recent"): self._cmd_recent(chat_id)
-        elif text.startswith("/check"): self._cmd_check(chat_id)
-        elif text.startswith("/help"): self._cmd_help(chat_id)
+        if text.startswith("/stats"): self._cmd_stats(cid, 'day')
+        elif text.startswith("/weekly"): self._cmd_stats(cid, 'week')
+        elif text.startswith("/monthly"): self._cmd_stats(cid, 'month')
+        elif text.startswith("/yearly"): self._cmd_stats(cid, 'year')
+        elif text.startswith("/now"): self._cmd_now(cid)
+        elif text.startswith("/latest"): self._cmd_latest(cid)
+        elif text.startswith("/recent"): self._cmd_recent(cid)
+        elif text.startswith("/check"): self._cmd_check(cid)
+        elif text.startswith("/help"): self._cmd_help(cid)
 
-    # 🔥 核心：通用统计逻辑
+    # 🔥 修复：使用 UserId 聚合，然后查名字
     def _cmd_stats(self, chat_id, period='day'):
-        # 1. 确定时间过滤条件
-        if period == 'week':
-            time_filter = "date('now', '-7 days')"
-            title = "本周周报"
-        elif period == 'month':
-            time_filter = "date('now', 'start of month')"
-            title = "本月月报"
-        elif period == 'year':
-            time_filter = "date('now', 'start of year')"
-            title = "年度报告"
-        else:
-            time_filter = "date('now', 'start of day')"
-            title = "今日日报"
-
-        where = f"WHERE DateCreated > {time_filter}"
+        where, params = get_base_filter('all') 
         
-        # 2. 隐藏用户
-        hidden = cfg.get("hidden_users")
-        params = []
-        if hidden:
-            # 插件表 UserId
-            where += f" AND UserId NOT IN ({','.join(['?']*len(hidden))})"
-            params.extend(hidden)
+        # 1. 确定时间
+        if period == 'week': time_filter = "date('now', '-7 days')"
+        elif period == 'month': time_filter = "date('now', 'start of month')"
+        elif period == 'year': time_filter = "date('now', 'start of year')"
+        else: time_filter = "date('now', 'start of day')" # day
+
+        where += f" AND DateCreated > {time_filter}"
         
         try:
-            # 3. 执行查询 (适配插件字段)
-            # 播放量
+            # 2. 查数据 (用 UserId)
             plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where}", params)[0]['c']
+            dur = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {where}", params)[0]['c'] or 0
+            hours = round(dur / 3600, 1)
             
-            # 时长 (秒 -> 小时)
-            dur = query_db(f"SELECT SUM(PlayDuration) as t FROM PlaybackActivity {where}", params)
-            total_h = round(dur[0]['t'] / 3600, 1) if dur and dur[0]['t'] else 0.0
+            # 活跃人数 (DISTINCT UserId)
+            users = query_db(f"SELECT COUNT(DISTINCT UserId) as c FROM PlaybackActivity {where}", params)[0]['c']
 
-            # 活跃用户
-            users = query_db(f"SELECT COUNT(DISTINCT UserName) as c FROM PlaybackActivity {where}", params)[0]['c']
-
-            # 榜首
-            top = query_db(f"SELECT UserName, SUM(PlayDuration) as t FROM PlaybackActivity {where} GROUP BY UserName ORDER BY t DESC LIMIT 1", params)
-            top_str = f"{top[0]['UserName']} ({round(top[0]['t']/3600, 1)}h)" if top else "暂无"
+            # 榜首 (UserId)
+            top = query_db(f"SELECT UserId, SUM(PlayDuration) as t FROM PlaybackActivity {where} GROUP BY UserId ORDER BY t DESC LIMIT 1", params)
+            
+            top_str = "暂无"
+            if top:
+                name = self._get_username(top[0]['UserId']) # ID -> Name
+                u_h = round(top[0]['t'] / 3600, 1)
+                top_str = f"{name} ({u_h}h)"
 
             # 热门内容
             tops = query_db(f"SELECT ItemName, COUNT(*) as c FROM PlaybackActivity {where} GROUP BY ItemName ORDER BY c DESC LIMIT 3", params)
@@ -286,41 +268,38 @@ class TelegramBot:
                 top_content += f"{['🥇','🥈','🥉'][i]} {item['ItemName']} ({item['c']}次)\n"
 
             caption = (
-                f"📊 <b>EmbyPulse {title}</b>\n───────────────\n"
-                f"📈 <b>数据大盘</b>\n▶️ 总播放量: {plays} 次\n⏱️ 活跃时长: {total_h} 小时\n"
+                f"📊 <b>EmbyPulse {period}报告</b>\n───────────────\n"
+                f"📈 <b>数据大盘</b>\n▶️ 总播放量: {plays} 次\n⏱️ 活跃时长: {hours} 小时\n"
                 f"👥 活跃人数: {users} 人\n👑 榜首之星: {top_str}\n"
                 f"───────────────\n🔥 <b>热门内容 Top 3</b>\n{top_content or '暂无数据'}"
             )
 
-            # 调用 ReportService 生成图片 (传递 period)
             if HAS_PIL:
                 img = report_gen.generate_report('all', period)
-                if img:
-                    self.send_photo(chat_id, img, caption)
-                else:
-                    self.send_message(chat_id, caption)
+                if img: self.send_photo(chat_id, img, caption)
+                else: self.send_message(chat_id, caption)
             else:
                 self.send_photo(chat_id, REPORT_COVER_URL, caption)
 
         except Exception as e:
             logger.error(f"Stats Error: {e}")
-            self.send_message(chat_id, f"❌ 获取数据失败: {str(e)}")
+            self.send_message(chat_id, f"❌ 数据库查询失败")
 
-    def _cmd_now(self, chat_id):
+    def _cmd_now(self, cid):
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         try:
             res = requests.get(f"{host}/emby/Sessions?api_key={key}", timeout=5)
             sessions = [s for s in res.json() if s.get("NowPlayingItem")]
-            if not sessions: return self.send_message(chat_id, "🟢 当前无播放")
+            if not sessions: return self.send_message(cid, "🟢 当前无播放")
             msg = f"🟢 <b>正在播放 ({len(sessions)})</b>\n"
             for s in sessions:
                 title = s['NowPlayingItem'].get('Name')
                 pct = int(s.get('PlayState', {}).get('PositionTicks', 0) / s['NowPlayingItem'].get('RunTimeTicks', 1) * 100)
                 msg += f"\n👤 <b>{s.get('UserName')}</b> | 🔄 {pct}%\n📺 {title}\n"
             self.send_message(cid, msg)
-        except: self.send_message(chat_id, "❌ 连接失败")
+        except: self.send_message(cid, "❌ 连接失败")
 
-    def _cmd_latest(self, chat_id):
+    def _cmd_latest(self, cid):
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         try:
             url = f"{host}/emby/Items?SortBy=DateCreated&SortOrder=Descending&IncludeItemTypes=Movie,Episode&Limit=5&Recursive=true&api_key={key}"
@@ -330,22 +309,23 @@ class TelegramBot:
                 name = i.get("Name")
                 if i.get("SeriesName"): name = f"{i.get('SeriesName')} - {name}"
                 msg += f"\n📅 {i.get('DateCreated', '')[:10]} | {name}"
-            self.send_message(chat_id, msg)
-        except: self.send_message(chat_id, "❌ 查询失败")
+            self.send_message(cid, msg)
+        except: self.send_message(cid, "❌ 查询失败")
 
-    def _cmd_recent(self, chat_id):
-        # 适配插件列名
+    def _cmd_recent(self, cid):
+        # 修正：查 UserId, ItemName
         try:
-            rows = query_db("SELECT UserName, ItemName, DateCreated FROM PlaybackActivity ORDER BY DateCreated DESC LIMIT 10")
-            if not rows: return self.send_message(chat_id, "📭 无记录")
+            rows = query_db("SELECT UserId, ItemName, DateCreated FROM PlaybackActivity ORDER BY DateCreated DESC LIMIT 10")
+            if not rows: return self.send_message(cid, "📭 无记录")
             msg = "📜 <b>最近播放</b>\n"
             for r in rows:
                 date = r['DateCreated'][:16].replace('T', ' ')
-                msg += f"\n⏰ {date} | {r['UserName']}\n🎬 {r['ItemName']}\n"
-            self.send_message(chat_id, msg)
-        except Exception as e: self.send_message(chat_id, f"❌ 查询失败: {str(e)}")
+                name = self._get_username(r['UserId'])
+                msg += f"\n⏰ {date} | {name}\n🎬 {r['ItemName']}\n"
+            self.send_message(cid, msg)
+        except Exception as e: self.send_message(cid, f"❌ 查询失败")
 
-    def _cmd_check(self, chat_id):
+    def _cmd_check(self, cid):
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         start = time.time()
         try:
@@ -354,12 +334,11 @@ class TelegramBot:
                 info = res.json()
                 local = (info.get('LocalAddresses') or [info.get('LocalAddress')])[0]
                 wan = (info.get('RemoteAddresses') or [info.get('WanAddress')])[0]
-                self.send_message(chat_id, f"✅ <b>在线</b>\n延迟: {int((time.time()-start)*1000)}ms\n内网: {local}\n外网: {wan}")
-        except: self.send_message(chat_id, "❌ 离线")
+                self.send_message(cid, f"✅ <b>在线</b>\n延迟: {int((time.time()-start)*1000)}ms\n内网: {local}\n外网: {wan}")
+        except: self.send_message(cid, "❌ 离线")
 
-    def _cmd_help(self, chat_id):
-        msg = "🤖 <b>EmbyPulse 指令列表</b>\n/stats - 日报\n/weekly - 周报\n/monthly - 月报\n/yearly - 年报\n/now - 正在播放\n/latest - 最近入库\n/recent - 历史记录\n/check - 健康检查"
-        self.send_message(chat_id, msg)
+    def _cmd_help(self, cid):
+        self.send_message(cid, "🤖 /stats, /weekly, /monthly, /now, /latest, /recent, /check")
 
     def _scheduler_loop(self):
         while self.running:
@@ -369,8 +348,7 @@ class TelegramBot:
                     self.last_check_min = now.minute
                     if now.hour == 9 and now.minute == 0:
                         self._check_user_expiration()
-                        if cfg.get("tg_chat_id") and cfg.get("enable_bot"):
-                            self._cmd_stats(str(cfg.get("tg_chat_id")))
+                        if cfg.get("tg_chat_id"): self._cmd_stats(str(cfg.get("tg_chat_id")))
                 time.sleep(5)
             except: time.sleep(60)
 
