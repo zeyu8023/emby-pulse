@@ -5,7 +5,7 @@ import datetime
 import io
 import logging
 import urllib.parse
-import json # 引入 json 用于构建按钮
+import json 
 from app.core.config import cfg, REPORT_COVER_URL, FALLBACK_IMAGE_URL
 from app.core.database import query_db, get_base_filter
 from app.services.report_service import report_gen, HAS_PIL
@@ -19,7 +19,6 @@ class TelegramBot:
         self.schedule_thread = None 
         self.offset = 0
         self.last_check_min = -1
-        # 缓存用户ID到用户名的映射
         self.user_cache = {}
         
     def start(self):
@@ -31,7 +30,7 @@ class TelegramBot:
         self.poll_thread.start()
         self.schedule_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
         self.schedule_thread.start()
-        print("🤖 Bot Service Started (Enhanced Search UI)")
+        print("🤖 Bot Service Started (Tech Specs Search)")
 
     def stop(self): self.running = False
 
@@ -78,7 +77,6 @@ class TelegramBot:
         except: pass
         return None
 
-    # 修改 send_photo 支持 reply_markup (按钮)
     def send_photo(self, chat_id, photo_io, caption, parse_mode="HTML", reply_markup=None):
         token = cfg.get("tg_bot_token")
         if not token: return
@@ -261,7 +259,7 @@ class TelegramBot:
         elif text.startswith("/check"): self._cmd_check(cid)
         elif text.startswith("/help"): self._cmd_help(cid)
 
-    # 🔥 核心升级：富媒体搜索
+    # 🔥 核心升级：包含库统计和媒体信息的搜索
     def _cmd_search(self, chat_id, text):
         parts = text.split(' ', 1)
         if len(parts) < 2:
@@ -271,9 +269,9 @@ class TelegramBot:
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         
         try:
-            # 1. 增加请求字段：评分、类型、年代、分级
+            # 1. 增加字段：MediaSources (媒体信息), RecursiveItemCount (集数), OfficialRating (分级)
             encoded_key = urllib.parse.quote(keyword)
-            fields = "CommunityRating,ProductionYear,Genres,Overview,OfficialRating,ProviderIds"
+            fields = "CommunityRating,ProductionYear,Genres,Overview,OfficialRating,ProviderIds,MediaSources,RecursiveItemCount"
             url = f"{host}/emby/Items?SearchTerm={encoded_key}&IncludeItemTypes=Movie,Series&Recursive=true&Fields={fields}&Limit=5&api_key={key}"
             
             res = requests.get(url, timeout=10)
@@ -282,70 +280,88 @@ class TelegramBot:
             if not items:
                 return self.send_message(chat_id, f"📭 未找到与 <b>{keyword}</b> 相关的资源")
             
-            # 2. 构建主展示信息 (第一个结果)
             top = items[0]
             name = top.get("Name")
             year = top.get("ProductionYear", "")
             year_str = f"({year})" if year else ""
-            
-            # 评分
-            rating = top.get("CommunityRating")
-            score_str = f"⭐️ <b>{rating}</b>" if rating else "⭐️ N/A"
-            
-            # 类型 (最多显示3个)
-            genres = top.get("Genres", [])
-            genre_str = " / ".join(genres[:3]) if genres else "暂无分类"
-            
-            # 简介
+            rating = top.get("CommunityRating", "N/A")
+            genres = " / ".join(top.get("Genres", [])[:3]) or "未分类"
             overview = top.get("Overview", "暂无简介")
             if len(overview) > 100: overview = overview[:100] + "..."
             
-            # 类型图标
-            type_icon = "🎬" if top.get("Type") == "Movie" else "📺"
+            # 🔥 媒体信息解析
+            media_info_str = ""
+            type_raw = top.get("Type")
             
-            # 构建富文本
+            if type_raw == "Movie":
+                type_icon = "🎬"
+                sources = top.get("MediaSources", [])
+                if sources:
+                    video = next((s for s in sources[0].get("MediaStreams", []) if s.get("Type") == "Video"), None)
+                    if video:
+                        # 分辨率判断
+                        width = video.get("Width", 0)
+                        if width >= 3800: res_str = "4K"
+                        elif width >= 1900: res_str = "1080P"
+                        elif width >= 1200: res_str = "720P"
+                        else: res_str = "SD"
+                        
+                        # 特效 (HDR/DoVi)
+                        video_range = video.get("VideoRange", "")
+                        if "HDR" in video_range: res_str += " HDR"
+                        if "DOVI" in video.get("DisplayTitle", "").upper() or "DOLBY VISION" in video.get("DisplayTitle", "").upper(): res_str += " DoVi"
+                        
+                        # 码率
+                        bitrate = int(sources[0].get("Bitrate", 0) / 1000000)
+                        
+                        media_info_str = f"📼 {res_str} | ⚡️ {bitrate}Mbps"
+            else:
+                # 剧集逻辑
+                type_icon = "📺"
+                # 集数统计
+                ep_count = top.get("RecursiveItemCount", 0)
+                media_info_str = f"📊 库内: {ep_count} 集"
+
+            # 2. 构建文案
             caption = (
                 f"{type_icon} <b>{name}</b> {year_str}\n"
-                f"{score_str}  |  🎭 {genre_str}\n"
+                f"⭐️ {rating}  |  🎭 {genres}\n"
+                f"{media_info_str}\n"
                 f"───────────────\n"
                 f"📝 <b>简介</b>: {overview}\n"
             )
             
-            # 3. 处理"其他结果"
             if len(items) > 1:
-                caption += "\n🔎 <b>其他匹配:</b>\n"
+                caption += "\n🔎 <b>其他结果:</b>\n"
                 for i, sub in enumerate(items[1:]):
                     sub_year = f"({sub.get('ProductionYear')})" if sub.get('ProductionYear') else ""
-                    sub_score = f"⭐️{sub.get('CommunityRating')}" if sub.get('CommunityRating') else ""
-                    caption += f"{i+2}. {sub.get('Name')} {sub_year} {sub_score}\n"
+                    # 简单显示分辨率或集数
+                    sub_extra = ""
+                    if sub.get("Type") == "Series":
+                        sub_extra = f"[{sub.get('RecursiveItemCount', 0)}集]"
+                    elif sub.get("Type") == "Movie":
+                        # 简单的分辨率检查
+                        try:
+                            w = sub.get("MediaSources", [{}])[0].get("MediaStreams", [{}])[0].get("Width", 0)
+                            if w > 3000: sub_extra = "[4K]"
+                            elif w > 1800: sub_extra = "[1080P]"
+                        except: pass
+                        
+                    caption += f"{i+2}. {sub.get('Name')} {sub_year} {sub_extra}\n"
 
-            # 4. 🔥 核心升级：生成播放按钮
-            # 优先使用配置的 public_host，如果没有则用 emby_host
-            # 注意：emby_host 如果是内网IP，在外网点按钮是打不开的
+            # 3. 按钮
             base_url = cfg.get("emby_public_host") or host
-            # 移除末尾斜杠以防万一
             if base_url.endswith('/'): base_url = base_url[:-1]
-            
-            # Emby Web 播放链接格式
             play_url = f"{base_url}/web/index.html#!/item?id={top.get('Id')}&serverId={top.get('ServerId')}"
             
-            buttons = [
-                [{"text": "▶️ 立即播放", "url": play_url}],
-                # 如果有 IMDb ID，可以加个 IMDb 按钮 (可选)
-                # [{"text": "🌐 IMDb", "url": f"https://www.imdb.com/title/{top['ProviderIds'].get('Imdb')}"}] if top.get('ProviderIds', {}).get('Imdb') else []
-            ]
-            
-            keyboard = {"inline_keyboard": [btn for btn in buttons if btn]}
+            buttons = [[{"text": "▶️ 立即播放", "url": play_url}]]
+            keyboard = {"inline_keyboard": buttons}
 
-            # 5. 发送带按钮的消息
+            # 4. 发送
             img_io = self._download_emby_image(top.get("Id"), 'Primary')
             if img_io:
                 self.send_photo(chat_id, img_io, caption, reply_markup=keyboard)
             else:
-                # 如果没图，发文本消息带按钮
-                # send_message 需要改写支持 reply_markup，这里简单处理：发图片失败就发文本
-                # 为了保持代码简洁，这里暂时只发文本，不带按钮(send_message没加markup参数)
-                # 建议：如果没图，用一张默认图发送，这样就能带按钮了
                 self.send_photo(chat_id, REPORT_COVER_URL, caption, reply_markup=keyboard)
 
         except Exception as e:
