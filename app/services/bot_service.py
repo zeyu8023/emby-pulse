@@ -5,6 +5,7 @@ import datetime
 import io
 import logging
 import urllib.parse
+import json # 引入 json 用于构建按钮
 from app.core.config import cfg, REPORT_COVER_URL, FALLBACK_IMAGE_URL
 from app.core.database import query_db, get_base_filter
 from app.services.report_service import report_gen, HAS_PIL
@@ -30,7 +31,7 @@ class TelegramBot:
         self.poll_thread.start()
         self.schedule_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
         self.schedule_thread.start()
-        print("🤖 Bot Service Started (Search + Poster + Reports)")
+        print("🤖 Bot Service Started (Enhanced Search UI)")
 
     def stop(self): self.running = False
 
@@ -77,12 +78,16 @@ class TelegramBot:
         except: pass
         return None
 
-    def send_photo(self, chat_id, photo_io, caption, parse_mode="HTML"):
+    # 修改 send_photo 支持 reply_markup (按钮)
+    def send_photo(self, chat_id, photo_io, caption, parse_mode="HTML", reply_markup=None):
         token = cfg.get("tg_bot_token")
         if not token: return
         try:
             url = f"https://api.telegram.org/bot{token}/sendPhoto"
             data = {"chat_id": chat_id, "caption": caption, "parse_mode": parse_mode}
+            if reply_markup:
+                data["reply_markup"] = json.dumps(reply_markup)
+                
             if isinstance(photo_io, str):
                 data['photo'] = photo_io
                 requests.post(url, data=data, proxies=self._get_proxies(), timeout=20)
@@ -256,7 +261,7 @@ class TelegramBot:
         elif text.startswith("/check"): self._cmd_check(cid)
         elif text.startswith("/help"): self._cmd_help(cid)
 
-    # 🔥 新增：资源搜索功能
+    # 🔥 核心升级：富媒体搜索
     def _cmd_search(self, chat_id, text):
         parts = text.split(' ', 1)
         if len(parts) < 2:
@@ -266,9 +271,10 @@ class TelegramBot:
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         
         try:
-            # 搜索 API：限制 Movie,Series，递归搜索，限制 5 条
+            # 1. 增加请求字段：评分、类型、年代、分级
             encoded_key = urllib.parse.quote(keyword)
-            url = f"{host}/emby/Items?SearchTerm={encoded_key}&IncludeItemTypes=Movie,Series&Recursive=true&Limit=5&api_key={key}"
+            fields = "CommunityRating,ProductionYear,Genres,Overview,OfficialRating,ProviderIds"
+            url = f"{host}/emby/Items?SearchTerm={encoded_key}&IncludeItemTypes=Movie,Series&Recursive=true&Fields={fields}&Limit=5&api_key={key}"
             
             res = requests.get(url, timeout=10)
             items = res.json().get("Items", [])
@@ -276,53 +282,79 @@ class TelegramBot:
             if not items:
                 return self.send_message(chat_id, f"📭 未找到与 <b>{keyword}</b> 相关的资源")
             
-            # 取第一个结果作为主展示
-            top_item = items[0]
-            name = top_item.get("Name")
-            year = top_item.get("ProductionYear", "")
-            rating = top_item.get("CommunityRating", "N/A")
-            overview = top_item.get("Overview", "暂无简介")
-            if len(overview) > 120: overview = overview[:120] + "..."
+            # 2. 构建主展示信息 (第一个结果)
+            top = items[0]
+            name = top.get("Name")
+            year = top.get("ProductionYear", "")
+            year_str = f"({year})" if year else ""
             
-            type_icon = "🎬" if top_item.get("Type") == "Movie" else "📺"
+            # 评分
+            rating = top.get("CommunityRating")
+            score_str = f"⭐️ <b>{rating}</b>" if rating else "⭐️ N/A"
             
-            # 构建回复文案
+            # 类型 (最多显示3个)
+            genres = top.get("Genres", [])
+            genre_str = " / ".join(genres[:3]) if genres else "暂无分类"
+            
+            # 简介
+            overview = top.get("Overview", "暂无简介")
+            if len(overview) > 100: overview = overview[:100] + "..."
+            
+            # 类型图标
+            type_icon = "🎬" if top.get("Type") == "Movie" else "📺"
+            
+            # 构建富文本
             caption = (
-                f"{type_icon} <b>{name}</b> ({year})\n"
-                f"⭐ 评分: {rating}\n"
-                f"📝 简介: {overview}\n"
+                f"{type_icon} <b>{name}</b> {year_str}\n"
+                f"{score_str}  |  🎭 {genre_str}\n"
+                f"───────────────\n"
+                f"📝 <b>简介</b>: {overview}\n"
             )
             
-            # 如果有更多结果，列在下面
+            # 3. 处理"其他结果"
             if len(items) > 1:
-                caption += "\n🔎 <b>其他结果:</b>\n"
+                caption += "\n🔎 <b>其他匹配:</b>\n"
                 for i, sub in enumerate(items[1:]):
-                    sub_year = sub.get("ProductionYear", "")
-                    sub_type = "电影" if sub.get("Type") == "Movie" else "剧集"
-                    caption += f"{i+2}. {sub.get('Name')} ({sub_year}) [{sub_type}]\n"
+                    sub_year = f"({sub.get('ProductionYear')})" if sub.get('ProductionYear') else ""
+                    sub_score = f"⭐️{sub.get('CommunityRating')}" if sub.get('CommunityRating') else ""
+                    caption += f"{i+2}. {sub.get('Name')} {sub_year} {sub_score}\n"
 
-            # 下载海报 (复用已有逻辑，会自动处理剧集ID)
-            img_io = self._download_emby_image(top_item.get("Id"), 'Primary')
+            # 4. 🔥 核心升级：生成播放按钮
+            # 优先使用配置的 public_host，如果没有则用 emby_host
+            # 注意：emby_host 如果是内网IP，在外网点按钮是打不开的
+            base_url = cfg.get("emby_public_host") or host
+            # 移除末尾斜杠以防万一
+            if base_url.endswith('/'): base_url = base_url[:-1]
             
+            # Emby Web 播放链接格式
+            play_url = f"{base_url}/web/index.html#!/item?id={top.get('Id')}&serverId={top.get('ServerId')}"
+            
+            buttons = [
+                [{"text": "▶️ 立即播放", "url": play_url}],
+                # 如果有 IMDb ID，可以加个 IMDb 按钮 (可选)
+                # [{"text": "🌐 IMDb", "url": f"https://www.imdb.com/title/{top['ProviderIds'].get('Imdb')}"}] if top.get('ProviderIds', {}).get('Imdb') else []
+            ]
+            
+            keyboard = {"inline_keyboard": [btn for btn in buttons if btn]}
+
+            # 5. 发送带按钮的消息
+            img_io = self._download_emby_image(top.get("Id"), 'Primary')
             if img_io:
-                self.send_photo(chat_id, img_io, caption)
+                self.send_photo(chat_id, img_io, caption, reply_markup=keyboard)
             else:
-                self.send_message(chat_id, caption)
+                # 如果没图，发文本消息带按钮
+                # send_message 需要改写支持 reply_markup，这里简单处理：发图片失败就发文本
+                # 为了保持代码简洁，这里暂时只发文本，不带按钮(send_message没加markup参数)
+                # 建议：如果没图，用一张默认图发送，这样就能带按钮了
+                self.send_photo(chat_id, REPORT_COVER_URL, caption, reply_markup=keyboard)
 
         except Exception as e:
             logger.error(f"Search Error: {e}")
             self.send_message(chat_id, "❌ 搜索时发生错误")
 
-    # 核心统计逻辑 (Top 5 用户 + Top 10 内容 + 中文标题)
     def _cmd_stats(self, chat_id, period='day'):
         where, params = get_base_filter('all') 
-        
-        titles = {
-            'day': '今日日报',
-            'week': '本周周报',
-            'month': '本月月报',
-            'year': '年度报告'
-        }
+        titles = {'day': '今日日报', 'week': '本周周报', 'month': '本月月报', 'year': '年度报告'}
         title_cn = titles.get(period, '数据报表')
 
         if period == 'week': time_filter = "date('now', '-7 days')"
@@ -333,7 +365,6 @@ class TelegramBot:
         where += f" AND DateCreated > {time_filter}"
         
         try:
-            # 基础统计
             plays_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where}", params)
             if not plays_res: raise Exception("DB Error")
             plays = plays_res[0]['c']
@@ -345,7 +376,6 @@ class TelegramBot:
             users_res = query_db(f"SELECT COUNT(DISTINCT UserId) as c FROM PlaybackActivity {where}", params)
             users = users_res[0]['c'] if users_res else 0
 
-            # 活跃用户榜 (Top 5)
             top_users = query_db(f"SELECT UserId, SUM(PlayDuration) as t FROM PlaybackActivity {where} GROUP BY UserId ORDER BY t DESC LIMIT 5", params)
             user_str = ""
             if top_users:
@@ -357,7 +387,6 @@ class TelegramBot:
             else:
                 user_str = "暂无数据"
 
-            # 热门内容榜 (Top 10)
             tops = query_db(f"SELECT ItemName, COUNT(*) as c FROM PlaybackActivity {where} GROUP BY ItemName ORDER BY c DESC LIMIT 10", params)
             top_content = ""
             if tops:
@@ -368,16 +397,10 @@ class TelegramBot:
                 top_content = "暂无数据"
 
             caption = (
-                f"📊 <b>EmbyPulse {title_cn}</b>\n"
-                f"───────────────\n"
-                f"📈 <b>数据大盘</b>\n"
-                f"▶️ 总播放量: {plays} 次\n"
-                f"⏱️ 活跃时长: {hours} 小时\n"
-                f"👥 活跃人数: {users} 人\n"
-                f"───────────────\n"
-                f"🏆 <b>活跃用户 Top 5</b>\n{user_str}"
-                f"───────────────\n"
-                f"🔥 <b>热门内容 Top 10</b>\n{top_content}"
+                f"📊 <b>EmbyPulse {title_cn}</b>\n───────────────\n"
+                f"📈 <b>数据大盘</b>\n▶️ 总播放量: {plays} 次\n⏱️ 活跃时长: {hours} 小时\n👥 活跃人数: {users} 人\n"
+                f"───────────────\n🏆 <b>活跃用户 Top 5</b>\n{user_str}"
+                f"───────────────\n🔥 <b>热门内容 Top 10</b>\n{top_content}"
             )
 
             if HAS_PIL:
