@@ -1,48 +1,50 @@
-from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse
-from app.core.config import templates, cfg
-from fastapi import Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from app.core.config import cfg
+import os
+
+# 初始化模版引擎
+templates = Jinja2Templates(directory="templates")
 
 router = APIRouter()
 
-@router.get("/")
-async def page_dashboard(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("index.html", {"request": request, "active_page": "dashboard", "user": request.session.get("user")})
+# 依赖项：检查是否登录
+def check_login(request: Request):
+    token = request.cookies.get("access_token")
+    if not token or token != cfg.get("web_password"):
+        # 如果是 API 请求返回 401，如果是页面请求跳转登录
+        if request.url.path.startswith("/api"):
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        return False
+    return True
 
-@router.get("/content")
-async def page_content(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("content.html", {"request": request, "active_page": "content", "user": request.session.get("user")})
+@router.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    if not check_login(request): return RedirectResponse("/login")
+    return templates.TemplateResponse("index.html", {"request": request})
 
-@router.get("/details")
-async def page_details(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("details.html", {"request": request, "active_page": "details", "user": request.session.get("user")})
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
 
-@router.get("/report")
-async def page_report(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("report.html", {"request": request, "active_page": "report", "user": request.session.get("user")})
+@router.get("/content", response_class=HTMLResponse)
+async def content_page(request: Request):
+    if not check_login(request): return RedirectResponse("/login")
+    return templates.TemplateResponse("content.html", {"request": request})
 
-@router.get("/bot")
-async def page_bot(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    context = {"request": request, "active_page": "bot", "user": request.session.get("user")}
-    context.update(cfg.get_all()) 
-    return templates.TemplateResponse("bot.html", context)
+@router.get("/report", response_class=HTMLResponse)
+async def report_page(request: Request):
+    if not check_login(request): return RedirectResponse("/login")
+    return templates.TemplateResponse("report.html", {"request": request})
 
-@router.get("/users_manage")
-async def page_users_manage(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("users.html", {"request": request, "active_page": "users_manage", "user": request.session.get("user")})
+@router.get("/users", response_class=HTMLResponse)
+async def users_page(request: Request):
+    if not check_login(request): return RedirectResponse("/login")
+    return templates.TemplateResponse("users.html", {"request": request})
 
-@router.get("/settings")
-async def page_settings(request: Request):
-    if not request.session.get("user"): return RedirectResponse("/login")
-    return templates.TemplateResponse("settings.html", {"request": request, "active_page": "settings", "user": request.session.get("user")})
-
-@app.get("/insight", response_class=HTMLResponse)
+# 🔥 修正点：这里必须用 @router.get，不能用 @app.get
+@router.get("/insight", response_class=HTMLResponse)
 async def insight_page(request: Request):
+    if not check_login(request): return RedirectResponse("/login")
     return templates.TemplateResponse("insight.html", {"request": request})
