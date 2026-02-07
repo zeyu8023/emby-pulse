@@ -37,10 +37,12 @@ TRANS_MAP = {
     "Extract MediaInfo": "提取媒体编码信息",
     "Extract Video Thumbnail": "提取视频缩略图",
     "Delete Persons": "清理无效人物",
-    "Trakt Sync": "Trakt 同步"
+    "Trakt Sync": "Trakt 同步",
+    "Export Library to Trakt": "同步库到 Trakt",
+    "Import playstates from Trakt.tv": "从 Trakt 导入播放状态"
 }
 
-# 🔥 类别排序与汉化
+# 🔥 核心类别排序与汉化 (不在这个列表里的，会自动显示原名)
 CAT_MAP = {
     "Library": {"name": "📚 媒体库", "order": 1},
     "System": {"name": "⚡ 系统核心", "order": 2},
@@ -49,7 +51,8 @@ CAT_MAP = {
     "Metadata": {"name": "📝 元数据", "order": 5},
     "Downloads": {"name": "📥 下载管理", "order": 6},
     "Sync": {"name": "🔄 同步与备份", "order": 7},
-    "Live TV": {"name": "📺 电视直播", "order": 8}
+    "Live TV": {"name": "📺 电视直播", "order": 8},
+    "Transcoding": {"name": "🎞️ 转码", "order": 9}
 }
 
 @router.get("/api/tasks")
@@ -70,42 +73,57 @@ def get_scheduled_tasks(request: Request):
             for t in raw_tasks:
                 # 1. 汉化名称 (保留原名)
                 origin_name = t.get('Name', '')
-                # 如果字典里有，用字典的；否则用原名
                 display_name = TRANS_MAP.get(origin_name, origin_name)
                 
-                # 2. 处理描述 (Emby 可能返回中文描述，优先保留)
+                # 2. 处理描述
                 desc = t.get('Description', '')
                 
-                # 3. 识别类别
+                # 3. 识别类别 (核心逻辑修改点)
                 cat_raw = t.get('Category', 'Other')
+                
                 if cat_raw in CAT_MAP:
+                    # 命中核心预设分类
                     cat_display = CAT_MAP[cat_raw]["name"]
-                    order = CAT_MAP[cat_raw]["order"]
+                    sort_order = CAT_MAP[cat_raw]["order"]
                 else:
-                    cat_display = f"🧩 插件 / 其他"
-                    order = 99 
+                    # 🔥 没命中的（插件），直接用原名！
+                    # 例如: Category="Trakt" -> 显示 "🧩 Trakt"
+                    cat_display = f"🧩 {cat_raw}"
+                    sort_order = 99 # 排在核心分类后面
                 
                 # 4. 构建数据对象
                 task_obj = {
                     "Id": t.get("Id"),
                     "Name": display_name,
                     "OriginalName": origin_name,
-                    "Description": desc, # 🔥 关键：透传描述
+                    "Description": desc,
                     "State": t.get("State"),
                     "CurrentProgressPercentage": t.get("CurrentProgressPercentage"),
                     "LastExecutionResult": t.get("LastExecutionResult"),
                     "Triggers": t.get("Triggers")
                 }
 
-                if order not in grouped:
-                    grouped[order] = {"title": cat_display, "tasks": []}
-                grouped[order]["tasks"].append(task_obj)
+                # 5. 归类 (使用分类名称作为 Key，防止不同插件合并)
+                if cat_display not in grouped:
+                    grouped[cat_display] = {
+                        "title": cat_display, 
+                        "order": sort_order, # 记录排序权重
+                        "tasks": []
+                    }
+                grouped[cat_display]["tasks"].append(task_obj)
             
-            final_list = []
-            for k in sorted(grouped.keys()):
-                grouped[k]["tasks"].sort(key=lambda x: x['Name']) # 组内排序
-                final_list.append(grouped[k])
-                
+            # 6. 转列表并排序
+            final_list = list(grouped.values())
+            
+            # 排序逻辑：
+            # 第一优先级: order (核心分类 1-9 先排，插件 99 后排)
+            # 第二优先级: title (插件之间按字母顺序排)
+            final_list.sort(key=lambda x: (x['order'], x['title']))
+            
+            # 组内任务排序 (按名称)
+            for group in final_list:
+                group["tasks"].sort(key=lambda x: x['Name'])
+
             return {"status": "success", "data": final_list}
             
         return {"status": "error", "message": f"Emby Error: {res.status_code}"}
