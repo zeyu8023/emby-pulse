@@ -40,12 +40,12 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
                 <h3 class="font-bold text-gray-700 dark:text-gray-200 mb-4">📺 分辨率分布</h3>
-                <div id="chart-res" style="height: 300px;"></div>
+                <div id="chart-res" style="height: 300px; width: 100%;"></div>
             </div>
             
             <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
                 <h3 class="font-bold text-gray-700 dark:text-gray-200 mb-4">🌈 动态范围 (HDR)</h3>
-                <div id="chart-hdr" style="height: 300px;"></div>
+                <div id="chart-hdr" style="height: 300px; width: 100%;"></div>
             </div>
         </div>
 
@@ -73,9 +73,15 @@
             const json = await res.json();
             
             if (json.status === 'success') {
-                renderDashboard(json.data);
+                // 🔥 核心修复：先显示面板，再渲染图表！
+                // ECharts 如果在 hidden 容器里初始化，宽高会是 0
                 document.getElementById('loading').classList.add('hidden');
                 document.getElementById('stats-panel').classList.remove('hidden');
+                
+                // 给一点微小的延迟确保 DOM 渲染完成
+                setTimeout(() => {
+                    renderDashboard(json.data);
+                }, 50);
             } else {
                 alert("加载失败: " + json.msg);
             }
@@ -91,11 +97,12 @@
         document.getElementById('val-4k').innerText = data.resolution['4K'];
         document.getElementById('val-hdr').innerText = data.hdr['Dolby Vision'] + data.hdr['HDR10'];
         
-        const hevcRate = ((data.codec['HEVC (H.265)'] / data.total) * 100).toFixed(0);
-        document.getElementById('val-hevc').innerText = isNaN(hevcRate) ? '0%' : hevcRate + '%';
+        const hevcRate = data.total > 0 ? ((data.codec['HEVC (H.265)'] / data.total) * 100).toFixed(0) : 0;
+        document.getElementById('val-hevc').innerText = hevcRate + '%';
 
         // 2. 绘制分辨率饼图
-        const chartRes = echarts.init(document.getElementById('chart-res'));
+        const resDom = document.getElementById('chart-res');
+        const chartRes = echarts.init(resDom);
         chartRes.setOption({
             tooltip: { trigger: 'item' },
             legend: { bottom: '0%', left: 'center' },
@@ -114,7 +121,8 @@
         });
 
         // 3. 绘制 HDR 环形图
-        const chartHdr = echarts.init(document.getElementById('chart-hdr'));
+        const hdrDom = document.getElementById('chart-hdr');
+        const chartHdr = echarts.init(hdrDom);
         chartHdr.setOption({
             tooltip: { trigger: 'item' },
             legend: { bottom: '0%', left: 'center' },

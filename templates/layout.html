@@ -73,8 +73,8 @@
             <a href="/users_manage" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'users' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}">
                 <i class="fa-solid fa-users-gear w-6"></i> <span class="ml-2">用户管理</span>
             </a>
-            <a href="/insight" class="flex items-center gap-3 px-4 py-3 text-gray-600 dark:text-gray-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-gray-800 transition rounded-xl mb-1">
-                <i class="fa-solid fa-chart-pie w-5 text-center"></i> <span class="font-bold text-sm">质量盘点</span>
+            <a href="/insight" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'insight' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}">
+                <i class="fa-solid fa-chart-pie w-6"></i> <span class="ml-2">质量盘点</span>
             </a>
             <a href="/settings" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'settings' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}">
                 <i class="fa-solid fa-gear w-6"></i> <span class="ml-2">系统设置</span>
@@ -123,6 +123,7 @@
             <a href="/report" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'report' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-wand-magic-sparkles w-6"></i> <span class="ml-2">映迹工坊</span></a>
             <a href="/bot" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'bot' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-robot w-6"></i> <span class="ml-2">机器人助手</span></a>
             <a href="/users_manage" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'users_manage' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-users-gear w-6"></i> <span class="ml-2">用户管理</span></a>
+            <a href="/insight" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'insight' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-chart-pie w-6"></i> <span class="ml-2">质量盘点</span></a>
             <a href="/settings" class="nav-item flex items-center px-4 py-3 rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-800 {% if active_page == 'settings' %}active{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-gear w-6"></i> <span class="ml-2">系统设置</span></a>
         </nav>
         <div class="p-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/30 flex gap-2">
@@ -152,7 +153,6 @@
     {% block scripts %}{% endblock %}
     
     <script>
-        // 侧边栏逻辑
         function toggleSidebar() {
             const sidebar = document.getElementById('mobile-sidebar');
             const overlay = document.getElementById('mobile-overlay');
@@ -168,7 +168,6 @@
             }
         }
 
-        // 🔥 主题切换逻辑
         function toggleTheme() {
             if (document.documentElement.classList.contains('dark')) {
                 document.documentElement.classList.remove('dark');
@@ -177,7 +176,6 @@
                 document.documentElement.classList.add('dark');
                 localStorage.theme = 'dark';
             }
-            // 派发事件，通知 Chart.js 更新
             window.dispatchEvent(new Event('theme-change'));
         }
     </script>
