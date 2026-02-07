@@ -19,27 +19,26 @@ class TelegramBot:
         self.schedule_thread = None 
         self.offset = 0
         self.last_check_min = -1
-        # 缓存正在播放的会话 ID，防止重复发送 (Webhook 模式下主要作为兜底)
+        # 缓存正在播放的会话 ID
         self.active_sessions = {}
         
     def start(self):
         """启动机器人服务"""
         if self.running: return
-        # 只要配置了 Token 就启动，功能开关在具体方法里判断
         if not cfg.get("tg_bot_token"): return
         
         self.running = True
         self._set_commands()
         
-        # 1. 消息轮询线程 (响应 /stats 等指令)
+        # 1. 消息轮询线程
         self.poll_thread = threading.Thread(target=self._polling_loop, daemon=True)
         self.poll_thread.start()
         
-        # 2. 定时任务线程 (早报、过期检查)
+        # 2. 定时任务线程
         self.schedule_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
         self.schedule_thread.start()
         
-        print("🤖 Bot Service Started (Full Logic)")
+        print("🤖 Bot Service Started (Robust Mode)")
 
     def stop(self): 
         self.running = False
@@ -107,7 +106,6 @@ class TelegramBot:
     def save_playback_activity(self, data):
         """
         🔥 修复核心：将播放记录写入数据库
-        被 webhook.py 在 playback.stop 事件中调用
         """
         try:
             user = data.get("User", {})
@@ -165,11 +163,14 @@ class TelegramBot:
 
             type_cn = "剧集" if item.get("Type") == "Episode" else "电影"
             
-            # 进度计算
+            # 🔥 进度计算双重保险
             ticks = data.get("PlaybackPositionTicks")
-            if not ticks: ticks = session.get("PlayState", {}).get("PositionTicks", 0)
-            total_ticks = item.get("RunTimeTicks", 1)
+            if ticks is None: # 如果根节点没有，去 Session 里找
+                ticks = session.get("PlayState", {}).get("PositionTicks")
             
+            if ticks is None: ticks = 0 # 还没开始
+            
+            total_ticks = item.get("RunTimeTicks", 1)
             progress_text = "0%"
             if total_ticks and total_ticks > 0:
                 pct = (ticks / total_ticks) * 100
@@ -204,20 +205,20 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Push Playback Error: {e}")
 
-    def push_new_media(self, item_id):
+    def push_new_media(self, item_id, fallback_item=None):
         """
-        处理入库通知
-        针对 404 和 STRM 问题进行了死磕式重试优化
+        处理入库通知 (带兜底逻辑)
+        :param item_id: 媒体 ID
+        :param fallback_item: Webhook 里的原始数据 (如果 API 查不到就用这个)
         """
         if not cfg.get("enable_library_notify") or not cfg.get("tg_chat_id"): return
         
         chat_id = str(cfg.get("tg_chat_id"))
         host = cfg.get("emby_host"); key = cfg.get("emby_api_key")
 
-        # 🔥 重试循环：最多尝试 3 次，应对扫描延迟
-        item = None
+        # 1. 尝试从 API 获取详情 (最多重试 3 次)
+        api_item = None
         for i in range(3):
-            # 递增等待时间：10s -> 25s -> 40s
             wait_time = 10 + (i * 15)
             logger.info(f"⏳ 等待入库扫描 ({wait_time}s)... [第{i+1}次]")
             time.sleep(wait_time) 
@@ -225,27 +226,33 @@ class TelegramBot:
             try:
                 res = requests.get(f"{host}/emby/Items/{item_id}?api_key={key}", timeout=10)
                 if res.status_code == 200:
-                    item = res.json()
-                    # 检查是否有图，如果没图且不是最后一次重试，则继续等
-                    if not item.get("ImageTags", {}).get("Primary") and i < 2:
+                    api_item = res.json()
+                    # 检查是否有图，如果没图且不是最后一次，继续等
+                    if not api_item.get("ImageTags", {}).get("Primary") and i < 2:
                         logger.warning(f"⚠️ 获取详情成功但无图，继续等待...")
                         continue
-                    break # 成功获取且有图，或者最后一次了，跳出
+                    break
                 else:
                     logger.warning(f"⚠️ 获取详情失败 HTTP {res.status_code}，重试中...")
             except Exception as e:
                 logger.error(f"❌ 请求 Emby API 出错: {e}")
 
-        if not item:
-            logger.error(f"❌ 放弃推送：Item {item_id} 详情不可用。")
+        # 2. 决定使用的数据源 (API 优先，Webhook 原始数据兜底)
+        final_item = api_item if api_item else fallback_item
+        
+        if not final_item:
+            logger.error(f"❌ 彻底失败：API 查不到且无 Webhook 原始数据，放弃推送。")
             return
 
+        if not api_item:
+            logger.warning(f"⚠️ API 获取失败，启用 Webhook 原始数据进行兜底推送！")
+
         try:
-            name = item.get("Name", "")
-            type_raw = item.get("Type", "Movie")
-            overview = item.get("Overview", "暂无简介...")
-            rating = item.get("CommunityRating", "N/A")
-            year = item.get("ProductionYear", "")
+            name = final_item.get("Name", "未知标题")
+            type_raw = final_item.get("Type", "Movie")
+            overview = final_item.get("Overview", "暂无简介...")
+            rating = final_item.get("CommunityRating", "N/A")
+            year = final_item.get("ProductionYear", "")
             
             if len(overview) > 150: overview = overview[:145] + "..."
 
@@ -254,9 +261,9 @@ class TelegramBot:
             
             if type_raw == "Episode":
                 type_cn = "剧集"
-                s_name = item.get("SeriesName", "")
-                s_idx = item.get("ParentIndexNumber", 1)
-                e_idx = item.get("IndexNumber", 1)
+                s_name = final_item.get("SeriesName", "")
+                s_idx = final_item.get("ParentIndexNumber", 1)
+                e_idx = final_item.get("IndexNumber", 1)
                 display_title = f"{s_name} S{str(s_idx).zfill(2)}E{str(e_idx).zfill(2)}"
                 if name and "Episode" not in name: display_title += f" {name}"
             elif type_raw == "Series":
@@ -269,12 +276,15 @@ class TelegramBot:
                 f"📝 剧情：{overview}"
             )
 
-            img_io = self._download_emby_image(item_id, 'Primary')
+            # 3. 发送图片 (如果 API 查到了就用 API 的图，否则用默认图)
+            img_io = None
+            if api_item:
+                img_io = self._download_emby_image(item_id, 'Primary')
+            
             if img_io:
                 self.send_photo(chat_id, img_io, caption)
             else:
-                # 🔥 降级：没图也强制发通知，使用默认封面
-                logger.info("⚠️ 无封面图，使用默认封面推送")
+                logger.info("⚠️ 无有效封面图，使用默认海报推送")
                 self.send_photo(chat_id, REPORT_COVER_URL, caption)
 
         except Exception as e: 
@@ -284,7 +294,7 @@ class TelegramBot:
 
     def _set_commands(self):
         token = cfg.get("tg_bot_token")
-        commands = [
+        cmds = [
             {"command": "stats", "description": "📊 超级日报"},
             {"command": "now", "description": "🟢 正在播放"},
             {"command": "latest", "description": "🆕 最近入库"},
@@ -292,7 +302,7 @@ class TelegramBot:
             {"command": "check", "description": "📡 系统检查"},
             {"command": "help", "description": "🤖 帮助菜单"}
         ]
-        try: requests.post(f"https://api.telegram.org/bot{token}/setMyCommands", json={"commands": commands}, proxies=self._get_proxies(), timeout=10)
+        try: requests.post(f"https://api.telegram.org/bot{token}/setMyCommands", json={"commands": cmds}, proxies=self._get_proxies(), timeout=10)
         except: pass
 
     def _polling_loop(self):

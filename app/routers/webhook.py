@@ -55,7 +55,8 @@ async def emby_webhook(request: Request, background_tasks: BackgroundTasks):
             
             # 过滤不需要的类型，只处理视频类
             if item_id and item_type in ["Movie", "Episode", "Series"]:
-                background_tasks.add_task(bot.push_new_media, item_id)
+                # 🔥 关键修改：把 item (原始数据) 也传过去，作为 404 时的兜底数据
+                background_tasks.add_task(bot.push_new_media, item_id, item)
 
         # [场景B] 播放开始
         elif event == "playback.start":
