@@ -1,295 +1,267 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>内容风云榜</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        :root {
-            --bg-color: #f8f9fa;
-            --card-bg: #ffffff;
-            --text-main: #2c3e50;
-            --text-sub: #7f8c8d;
-            --gold: #ffd700;
-            --silver: #a0a0a0;
-            --bronze: #cd7f32;
-        }
+{% extends "layout.html" %}
+{% block title %}内容风云榜 - EmbyPulse{% endblock %}
+{% block head %}
+<style>
+    /* 领奖台卡片基础动画 */
+    .podium-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    .podium-card:active { transform: scale(0.95); }
+    
+    /* 冠军光效加强 */
+    .rank-1-border { 
+        border-color: #f59e0b; 
+        box-shadow: 0 0 25px rgba(245, 158, 11, 0.3); 
+    }
+    .rank-2-border { border-color: #cbd5e1; }
+    .rank-3-border { border-color: #b45309; }
 
-        body { 
-            background-color: var(--bg-color); 
-            color: var(--text-main); 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-            /* 移除底部内边距，因为没有底栏了 */
-            padding-bottom: 20px; 
-        }
+    /* 皇冠图标动画 */
+    .crown-icon { 
+        position: absolute; 
+        top: -20px; 
+        left: 50%; 
+        transform: translateX(-50%); 
+        font-size: 1.8rem; 
+        color: #f59e0b; 
+        filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3)); 
+        z-index: 20; 
+        animation: float 3s ease-in-out infinite;
+    }
+    @keyframes float {
+        0%, 100% { transform: translateX(-50%) translateY(0); }
+        50% { transform: translateX(-50%) translateY(-5px); }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto w-full px-3 md:px-8 py-4 pb-24">
+    
+    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+        <div class="text-center md:text-left">
+            <h1 class="text-xl md:text-2xl font-black text-gray-800 dark:text-white flex items-center gap-2 justify-center md:justify-start">
+                <i class="fa-solid fa-fire text-red-500"></i> 内容风云榜
+            </h1>
+            <p class="text-xs text-gray-500 mt-1">全服播放热度统计 (全量)</p>
+        </div>
         
-        .container { max-width: 800px; padding: 15px; }
-        .page-header { margin-bottom: 20px; text-align: center; margin-top: 10px; }
-        .page-title { font-weight: 800; color: #2c3e50; margin: 0; font-size: 1.5rem; }
-
-        /* --- 🏆 领奖台核心样式 (Podium) --- */
-        .podium-container {
-            display: flex;
-            justify-content: center;
-            align-items: flex-end; /* 底部对齐形成阶梯 */
-            gap: 8px; /* 间距 */
-            margin-bottom: 30px;
-            margin-top: 10px;
-            padding: 0 5px;
-            flex-wrap: nowrap; /* 🔥 强制不换行，保证在同一行 */
-        }
-
-        .podium-item {
-            position: relative;
-            text-align: center;
-            cursor: pointer;
-            flex-shrink: 1; /* 允许缩小 */
-        }
-        
-        /* 视觉顺序调整：让冠军(rank-1)在中间(order 2) */
-        /* 使用 flex-basis 设定基础宽度 */
-        .rank-1 { order: 2; width: 36%; z-index: 10; }
-        .rank-2 { order: 1; width: 30%; }
-        .rank-3 { order: 3; width: 30%; }
-
-        /* 海报容器 */
-        .poster-card {
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            position: relative;
-            background: #e0e0e0;
-            aspect-ratio: 2/3; /* 强制海报比例 */
-        }
-
-        .poster-img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
-        }
-        
-        /* 阶梯边框与光效 */
-        .rank-1 .poster-card { 
-            border: 3px solid var(--gold); 
-            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
-            transform: scale(1.05); /* 冠军稍微放大一点 */
-            transform-origin: bottom center;
-        }
-        .rank-2 .poster-card { border: 2px solid var(--silver); }
-        .rank-3 .poster-card { border: 2px solid var(--bronze); }
-
-        /* 排名徽章 */
-        .rank-badge {
-            position: absolute;
-            bottom: -10px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            color: #fff;
-            font-weight: bold;
-            font-size: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 20;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            border: 2px solid #fff;
-        }
-        .rank-1 .rank-badge { background: var(--gold); width: 30px; height: 30px; font-size: 16px; bottom: -12px;}
-        .rank-2 .rank-badge { background: var(--silver); }
-        .rank-3 .rank-badge { background: var(--bronze); }
-
-        /* 信息文字 */
-        .info-box { margin-top: 15px; }
-        .item-title {
-            font-size: 12px;
-            font-weight: 700;
-            margin-bottom: 2px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            padding: 0 2px;
-        }
-        .play-count { font-size: 10px; color: var(--text-sub); }
-        .rank-1 .item-title { font-size: 13px; color: #000; margin-top: 5px;}
-        .rank-1 .play-count { color: #d35400; font-weight: bold; }
-
-        /* --- 列表样式 (4-10名) --- */
-        .list-container {
-            background: var(--card-bg);
-            border-radius: 12px;
-            padding: 5px 15px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.03);
-        }
-        .list-item {
-            display: flex;
-            align-items: center;
-            padding: 10px 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
-        .list-item:last-child { border-bottom: none; }
-        
-        .list-rank {
-            width: 25px;
-            font-weight: 700;
-            color: #bdc3c7;
-            font-style: italic;
-            text-align: center;
-            margin-right: 5px;
-        }
-        .list-poster {
-            width: 40px;
-            height: 60px;
-            border-radius: 4px;
-            margin-right: 12px;
-            background: #eee;
-            object-fit: cover;
-        }
-        .list-info { flex: 1; min-width: 0; }
-        .list-title { font-size: 14px; font-weight: 600; color: #34495e; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .list-count { font-size: 12px; color: #95a5a6; }
-        
-        /* 筛选按钮 */
-        .filter-tabs { display: flex; justify-content: center; gap: 8px; margin-bottom: 20px; }
-        .filter-btn { border: none; background: #fff; padding: 5px 15px; border-radius: 20px; font-size: 13px; font-weight: 600; color: #7f8c8d; box-shadow: 0 2px 5px rgba(0,0,0,0.05); transition: all 0.2s; }
-        .filter-btn.active { background: #2c3e50; color: #fff; box-shadow: 0 4px 10px rgba(44, 62, 80, 0.3); }
-        
-        .loading-state { text-align: center; padding: 40px; color: #95a5a6; }
-        .error-state { text-align: center; padding: 30px; color: #e74c3c; font-size: 14px; }
-    </style>
-</head>
-<body>
-
-<div class="container">
-    <div class="page-header">
-        <h4 class="page-title">🔥 内容风云榜</h4>
-        <p class="text-muted" style="font-size: 12px;">Emby Server 数据实时统计</p>
+        <div class="flex flex-wrap justify-center items-center gap-2 bg-white dark:bg-gray-800 p-1.5 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <button onclick="setCategory('all')" class="cat-btn px-3 py-1.5 rounded-lg text-xs font-bold transition bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200" data-cat="all">全部</button>
+            <button onclick="setCategory('Movie')" class="cat-btn px-3 py-1.5 rounded-lg text-xs font-bold transition text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600" data-cat="Movie">电影</button>
+            <button onclick="setCategory('Episode')" class="cat-btn px-3 py-1.5 rounded-lg text-xs font-bold transition text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600" data-cat="Episode">剧集</button>
+            
+            <div class="w-px h-4 bg-gray-200 dark:bg-gray-600 mx-1"></div>
+            
+            <select id="user-select" onchange="changeUser()" class="bg-transparent text-xs font-bold text-gray-600 dark:text-gray-300 focus:outline-none cursor-pointer max-w-[90px] truncate">
+                <option value="all">🌏 全服</option>
+            </select>
+        </div>
     </div>
 
-    <div class="filter-tabs">
-        <button class="filter-btn active" onclick="loadData('week')">本周</button>
-        <button class="filter-btn" onclick="loadData('month')">本月</button>
-        <button class="filter-btn" onclick="loadData('all')">全量</button>
+    <div id="loading" class="text-center py-20 text-gray-400">
+        <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-2"></i>
+        <p class="text-xs">数据分析中...</p>
     </div>
 
-    <div id="content-area">
-        <div class="loading-state">
-            <i class="fas fa-spinner fa-spin fa-2x"></i>
+    <div id="content-area" class="hidden animate-fade-in space-y-8">
+        
+        <div class="flex flex-row items-end justify-center gap-2 md:gap-6 px-1 mb-8" id="podium-section">
+            </div>
+
+        <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden max-w-4xl mx-auto w-full">
+            <div class="px-5 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-700/50 flex justify-between items-center">
+                <h3 class="font-bold text-gray-700 dark:text-gray-300 text-xs md:text-sm uppercase tracking-wider">
+                    <i class="fa-solid fa-list-ol mr-1"></i> 上榜名单
+                </h3>
+                <span class="text-[10px] md:text-xs text-gray-400 bg-gray-200 dark:bg-gray-600 px-2 py-0.5 rounded-full">Top 4 - 20</span>
+            </div>
+            <div id="list-section" class="divide-y divide-gray-50 dark:divide-gray-700/50">
+                </div>
         </div>
     </div>
 </div>
+{% endblock %}
 
-<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+{% block scripts %}
 <script>
-    // 初始化
-    document.addEventListener('DOMContentLoaded', () => {
-        loadData('week');
-    });
+    // 默认参数
+    let state = { user: 'all', category: 'all', sortBy: 'count', period: 'all' };
 
-    // 切换筛选按钮样式
-    const btns = document.querySelectorAll('.filter-btn');
-    btns.forEach(btn => {
-        btn.addEventListener('click', function() {
-            btns.forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-        });
-    });
-
-    function loadData(period) {
-        const area = document.getElementById('content-area');
-        area.innerHTML = '<div class="loading-state"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
-
-        // 🔥 修正 API URL：带上 period 参数，确保后端能正确过滤
-        // 增加 sort_by=count 确保按播放量排序
-        const url = `/api/stats/top_movies?user_id=all&category=all&period=${period}&sort_by=count`; 
-        
-        axios.get(url)
-            .then(res => {
-                const list = res.data;
-                if (!list || list.length === 0) {
-                    area.innerHTML = '<div class="loading-state">暂无数据</div>';
-                    return;
-                }
-                renderPodium(list);
-            })
-            .catch(err => {
-                console.error("加载失败详情:", err);
-                area.innerHTML = '<div class="error-state"><i class="fas fa-exclamation-circle"></i> 数据加载失败<br>请检查后端日志</div>';
-            });
+    async function init() {
+        await loadUsers();
+        loadContent();
     }
 
-    function renderPodium(list) {
-        // 确保数据足够
-        const top3 = list.slice(0, 3);
-        const rest = list.slice(3, 20); // 取前20名
+    function setCategory(cat) {
+        state.category = cat;
+        // 按钮样式切换
+        document.querySelectorAll('.cat-btn').forEach(btn => {
+            if(btn.dataset.cat === cat) {
+                btn.classList.add('bg-gray-100', 'dark:bg-gray-700', 'text-gray-800', 'dark:text-gray-200');
+                btn.classList.remove('text-gray-500', 'dark:text-gray-400');
+            } else {
+                btn.classList.remove('bg-gray-100', 'dark:bg-gray-700', 'text-gray-800', 'dark:text-gray-200');
+                btn.classList.add('text-gray-500', 'dark:text-gray-400');
+            }
+        });
+        loadContent();
+    }
+
+    async function loadUsers() {
+        try {
+            const res = await fetch('/api/users');
+            const json = await res.json();
+            const select = document.getElementById('user-select');
+            if(json.status === 'success') {
+                json.data.forEach(user => {
+                    const option = document.createElement('option');
+                    option.value = user.UserId;
+                    option.innerText = `👤 ${user.UserName}`;
+                    select.appendChild(option);
+                });
+            }
+        } catch (e) { console.error("用户加载失败", e); }
+    }
+
+    function changeUser() {
+        state.user = document.getElementById('user-select').value;
+        loadContent();
+    }
+
+    async function loadContent() {
+        const loading = document.getElementById('loading');
+        const content = document.getElementById('content-area');
+        loading.classList.remove('hidden'); 
+        content.classList.add('hidden');
+
+        try {
+            // 🔥 关键修正：加上 period=all 确保能拉取到全量数据，避免"暂无数据"
+            const url = `/api/stats/top_movies?user_id=${state.user}&category=${state.category}&period=${state.period}&sort_by=${state.sortBy}`;
+            
+            const res = await fetch(url);
+            const json = await res.json();
+            
+            if(json.status === 'success' && json.data && json.data.length > 0) {
+                const list = json.data;
+                const top3 = [];
+                // 构造前三名数据
+                if(list[0]) top3.push({...list[0], rank: 1});
+                if(list[1]) top3.push({...list[1], rank: 2});
+                if(list[2]) top3.push({...list[2], rank: 3});
+                
+                const others = list.slice(3); // 第4名以后
+
+                renderPodium(top3);
+                renderList(others);
+                
+                loading.classList.add('hidden'); 
+                content.classList.remove('hidden');
+            } else {
+                loading.innerHTML = `
+                    <div class="py-10">
+                        <i class="fa-solid fa-ghost text-4xl text-gray-300 dark:text-gray-600 mb-4"></i>
+                        <p class="text-sm">暂无播放记录</p>
+                    </div>`;
+            }
+        } catch (e) { 
+            console.error(e); 
+            loading.innerText = "数据加载异常"; 
+        }
+    }
+
+    function renderPodium(items) {
+        const container = document.getElementById('podium-section');
+        let html = '';
+        
+        items.forEach(item => {
+            // 🔥 图片 URL 加上 v=4 强制刷新缓存，显示竖屏海报
+            const imgUrl = `/api/proxy/image/${item.ItemId}/primary?v=4`;
+            
+            // 样式逻辑
+            const isFirst = item.rank === 1;
+            
+            // 手机端高度适配：确保一行放下3个
+            // 冠军：宽36%，高约190px (mobile) / 宽64 高80 (pc)
+            // 亚季：宽30%，高约140px (mobile) / 宽48 高60 (pc)
+            let widthClass = isFirst ? 'w-[36%] md:w-64' : 'w-[30%] md:w-48';
+            let heightClass = isFirst ? 'aspect-[2/3] md:h-80' : 'aspect-[2/3] md:h-60'; 
+            let borderClass = `rank-${item.rank}-border`;
+            
+            // 皇冠
+            let crownHtml = isFirst ? '<i class="fa-solid fa-crown crown-icon"></i>' : '';
+            
+            // 排名徽章颜色
+            let rankBadgeColor = isFirst ? 'bg-gradient-to-r from-yellow-400 to-yellow-600' : (item.rank === 2 ? 'bg-gray-400' : 'bg-amber-700');
+            
+            // 🔥 核心布局逻辑：利用 order 属性调整视觉顺序
+            // Rank 2 (亚军) -> order-1 (左边)
+            // Rank 1 (冠军) -> order-2 (中间)
+            // Rank 3 (季军) -> order-3 (右边)
+            let orderClass = '';
+            if (item.rank === 1) orderClass = 'order-2 z-10 -mx-1 mb-1'; 
+            if (item.rank === 2) orderClass = 'order-1';       
+            if (item.rank === 3) orderClass = 'order-3';       
+
+            html += `
+            <div class="podium-card relative flex flex-col items-center group shrink-0 ${orderClass} ${widthClass}">
+                ${crownHtml}
+                <div class="relative w-full rounded-xl md:rounded-2xl overflow-hidden border-2 md:border-4 ${borderClass} ${heightClass} bg-gray-200 dark:bg-gray-800 shadow-lg">
+                    <img src="${imgUrl}" class="w-full h-full object-cover group-hover:scale-105 transition duration-700" 
+                         loading="lazy"
+                         onerror="this.src='https://via.placeholder.com/300x450?text=No+Cover'">
+                    
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
+                    
+                    <div class="absolute bottom-0 left-0 right-0 p-2 md:p-3 text-center">
+                        <div class="inline-block ${rankBadgeColor} text-white text-[10px] md:text-xs font-bold px-1.5 md:px-2 py-0.5 rounded shadow-sm mb-1">
+                            #${item.rank}
+                        </div>
+                        <h3 class="text-white font-bold text-xs md:text-lg line-clamp-1 leading-tight drop-shadow-sm">${item.ItemName}</h3>
+                        <p class="text-gray-300 text-[10px] md:text-xs mt-0.5 font-mono opacity-90">${item.PlayCount} 次</p>
+                    </div>
+                </div>
+            </div>`;
+        });
+        container.innerHTML = html;
+    }
+
+    function renderList(items) {
+        const container = document.getElementById('list-section');
+        if(items.length === 0) { 
+            container.innerHTML = '<div class="p-8 text-center text-gray-400 text-xs">没有更多数据了</div>'; 
+            return; 
+        }
 
         let html = '';
-
-        // 1. 领奖台区域 (Flexbox 布局)
-        if (top3.length > 0) {
-            html += '<div class="podium-container">';
+        items.forEach((item, index) => {
+            const rank = index + 4;
+            const imgUrl = `/api/proxy/image/${item.ItemId}/primary?v=4`;
             
-            // 遍历 Top 3
-            top3.forEach((item, index) => {
-                const rank = index + 1;
-                // 海报防缓存
-                const imgUrl = `/api/proxy/image/${item.ItemId}/primary?v=3`;
-                
-                // 注意：这里我们按 1, 2, 3 的顺序生成 HTML
-                // 但是 CSS 的 order 属性会把它们重新排列成：2 (左), 1 (中), 3 (右)
-                // 修正：实际上 CSS order: 1 是最左，2 是中间，3 是最右
-                // 所以 .rank-2 { order: 1 } (左), .rank-1 { order: 2 } (中), .rank-3 { order: 3 } (右)
-                
-                html += `
-                <div class="podium-item rank-${rank}">
-                    <div class="poster-card">
-                        <img src="${imgUrl}" class="poster-img" onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'">
-                        <div class="rank-badge">${rank}</div>
-                    </div>
-                    <div class="info-box">
-                        <div class="item-title">${item.ItemName}</div>
-                        <div class="play-count">${item.PlayCount}次</div>
+            html += `
+            <div class="flex items-center p-3 md:p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition group cursor-default">
+                <div class="w-6 md:w-8 text-center font-bold text-gray-300 dark:text-gray-600 text-sm md:text-lg mr-2 md:mr-4 italic">
+                    ${rank}
+                </div>
+                <div class="w-10 h-14 md:w-12 md:h-16 rounded-md bg-gray-200 dark:bg-gray-700 overflow-hidden shrink-0 mr-3 shadow-sm relative">
+                     <img src="${imgUrl}" class="w-full h-full object-cover" loading="lazy">
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h4 class="text-xs md:text-sm font-bold text-gray-800 dark:text-gray-200 truncate group-hover:text-amber-600 transition">
+                        ${item.ItemName}
+                    </h4>
+                    <div class="text-[10px] md:text-xs text-gray-400 mt-1 flex items-center gap-2">
+                        <span class="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-500 dark:text-gray-400">
+                            <i class="fa-solid fa-play text-[8px] mr-1"></i>${item.PlayCount}
+                        </span>
+                        <span>
+                            <i class="fa-regular fa-clock mr-1"></i>${Math.round(item.TotalTime/60)}m
+                        </span>
                     </div>
                 </div>
-                `;
-            });
-            html += '</div>';
-        }
-
-        // 2. 列表区域 (4名以后)
-        if (rest.length > 0) {
-            html += '<div class="list-container">';
-            rest.forEach((item, index) => {
-                const rank = index + 4;
-                const imgUrl = `/api/proxy/image/${item.ItemId}/primary?v=3`;
-                
-                html += `
-                <div class="list-item">
-                    <div class="list-rank">${rank}</div>
-                    <img src="${imgUrl}" class="list-poster" loading="lazy">
-                    <div class="list-info">
-                        <div class="list-title">${item.ItemName}</div>
-                        <div class="list-count">播放 ${item.PlayCount} 次 · ${formatTime(item.TotalDuration)}</div>
-                    </div>
-                </div>
-                `;
-            });
-            html += '</div>';
-        }
-
-        document.getElementById('content-area').innerHTML = html;
+            </div>`;
+        });
+        container.innerHTML = html;
     }
 
-    function formatTime(seconds) {
-        if(!seconds) return '0h';
-        return (seconds / 3600).toFixed(1) + 'h';
-    }
+    init();
 </script>
-
-</body>
-</html>
+{% endblock %}
