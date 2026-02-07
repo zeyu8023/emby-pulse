@@ -29,7 +29,7 @@ class TelegramBot:
         self.poll_thread.start()
         self.schedule_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
         self.schedule_thread.start()
-        print("🤖 Bot Service Started (Top 5 Users + Top 10 Content)")
+        print("🤖 Bot Service Started (Localized Reports)")
 
     def stop(self): self.running = False
 
@@ -253,11 +253,19 @@ class TelegramBot:
         elif text.startswith("/check"): self._cmd_check(cid)
         elif text.startswith("/help"): self._cmd_help(cid)
 
-    # 🔥 核心修改：Top 5 用户 + Top 10 内容
+    # 🔥 核心修改：完全中文化标题
     def _cmd_stats(self, chat_id, period='day'):
         where, params = get_base_filter('all') 
         
-        # 1. 时间过滤
+        # 1. 标题与时间映射
+        titles = {
+            'day': '今日日报',
+            'week': '本周周报',
+            'month': '本月月报',
+            'year': '年度报告'
+        }
+        title_cn = titles.get(period, '数据报表')
+
         if period == 'week': time_filter = "date('now', '-7 days')"
         elif period == 'month': time_filter = "date('now', 'start of month')"
         elif period == 'year': time_filter = "date('now', 'start of year')"
@@ -301,9 +309,9 @@ class TelegramBot:
             else:
                 top_content = "暂无数据"
 
-            # 5. 构建文案
+            # 5. 构建优化后的中文文案
             caption = (
-                f"📊 <b>EmbyPulse {period}报告</b>\n"
+                f"📊 <b>EmbyPulse {title_cn}</b>\n"
                 f"───────────────\n"
                 f"📈 <b>数据大盘</b>\n"
                 f"▶️ 总播放量: {plays} 次\n"
