@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>内容风云榜 - EmbyPulse</title>
+    <title>内容风云榜</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -13,170 +13,154 @@
             --text-main: #2c3e50;
             --text-sub: #7f8c8d;
             --gold: #ffd700;
-            --silver: #c0c0c0;
+            --silver: #a0a0a0;
             --bronze: #cd7f32;
         }
 
-        body { background-color: var(--bg-color); color: var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding-bottom: 60px; }
+        body { 
+            background-color: var(--bg-color); 
+            color: var(--text-main); 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            /* 移除底部内边距，因为没有底栏了 */
+            padding-bottom: 20px; 
+        }
         
         .container { max-width: 800px; padding: 15px; }
-        .page-header { margin-bottom: 25px; text-align: center; }
-        .page-title { font-weight: 800; color: #2c3e50; margin: 0; }
+        .page-header { margin-bottom: 20px; text-align: center; margin-top: 10px; }
+        .page-title { font-weight: 800; color: #2c3e50; margin: 0; font-size: 1.5rem; }
 
         /* --- 🏆 领奖台核心样式 (Podium) --- */
         .podium-container {
             display: flex;
             justify-content: center;
             align-items: flex-end; /* 底部对齐形成阶梯 */
-            gap: 10px; /* 间距 */
-            margin-bottom: 40px;
-            margin-top: 20px;
+            gap: 8px; /* 间距 */
+            margin-bottom: 30px;
+            margin-top: 10px;
             padding: 0 5px;
+            flex-wrap: nowrap; /* 🔥 强制不换行，保证在同一行 */
         }
 
         .podium-item {
             position: relative;
             text-align: center;
-            transition: transform 0.2s;
             cursor: pointer;
+            flex-shrink: 1; /* 允许缩小 */
         }
         
         /* 视觉顺序调整：让冠军(rank-1)在中间(order 2) */
-        .rank-1 { order: 2; width: 38%; z-index: 10; }
+        /* 使用 flex-basis 设定基础宽度 */
+        .rank-1 { order: 2; width: 36%; z-index: 10; }
         .rank-2 { order: 1; width: 30%; }
         .rank-3 { order: 3; width: 30%; }
 
         /* 海报容器 */
         .poster-card {
-            border-radius: 12px;
+            border-radius: 10px;
             overflow: hidden;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             position: relative;
-            background: #000;
+            background: #e0e0e0;
+            aspect-ratio: 2/3; /* 强制海报比例 */
         }
 
         .poster-img {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            opacity: 0.9;
-            transition: opacity 0.3s;
+            display: block;
         }
         
-        /* 阶梯高度与特效 */
+        /* 阶梯边框与光效 */
         .rank-1 .poster-card { 
-            height: 220px; 
             border: 3px solid var(--gold); 
-            box-shadow: 0 0 25px rgba(255, 215, 0, 0.4);
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+            transform: scale(1.05); /* 冠军稍微放大一点 */
+            transform-origin: bottom center;
         }
-        .rank-2 .poster-card { 
-            height: 170px; 
-            border: 2px solid var(--silver); 
-        }
-        .rank-3 .poster-card { 
-            height: 150px; 
-            border: 2px solid var(--bronze); 
-        }
+        .rank-2 .poster-card { border: 2px solid var(--silver); }
+        .rank-3 .poster-card { border: 2px solid var(--bronze); }
 
         /* 排名徽章 */
         .rank-badge {
             position: absolute;
-            bottom: -12px;
+            bottom: -10px;
             left: 50%;
             transform: translateX(-50%);
-            width: 28px;
-            height: 28px;
+            width: 24px;
+            height: 24px;
             border-radius: 50%;
             color: #fff;
             font-weight: bold;
-            font-size: 14px;
+            font-size: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 20;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            border: 2px solid #fff;
         }
-        .rank-1 .rank-badge { background: var(--gold); width: 36px; height: 36px; font-size: 18px; bottom: -15px;}
+        .rank-1 .rank-badge { background: var(--gold); width: 30px; height: 30px; font-size: 16px; bottom: -12px;}
         .rank-2 .rank-badge { background: var(--silver); }
         .rank-3 .rank-badge { background: var(--bronze); }
 
         /* 信息文字 */
-        .info-box {
-            margin-top: 20px;
-        }
+        .info-box { margin-top: 15px; }
         .item-title {
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 700;
             margin-bottom: 2px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            padding: 0 2px;
         }
-        .play-count {
-            font-size: 11px;
-            color: var(--text-sub);
-        }
-        .rank-1 .item-title { font-size: 15px; color: #000; }
+        .play-count { font-size: 10px; color: var(--text-sub); }
+        .rank-1 .item-title { font-size: 13px; color: #000; margin-top: 5px;}
         .rank-1 .play-count { color: #d35400; font-weight: bold; }
-
-        /* --- 📱 手机端特别优化 --- */
-        @media (max-width: 576px) {
-            .podium-container { gap: 6px; } /* 缩小间距 */
-            
-            /* 调整高度以适应小屏幕 */
-            .rank-1 .poster-card { height: 180px; }
-            .rank-2 .poster-card { height: 140px; }
-            .rank-3 .poster-card { height: 125px; }
-            
-            .item-title { font-size: 12px; }
-            .rank-1 .item-title { font-size: 13px; }
-        }
 
         /* --- 列表样式 (4-10名) --- */
         .list-container {
             background: var(--card-bg);
-            border-radius: 16px;
-            padding: 10px 20px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+            border-radius: 12px;
+            padding: 5px 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.03);
         }
         .list-item {
             display: flex;
             align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid #eee;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
         }
         .list-item:last-child { border-bottom: none; }
         
         .list-rank {
-            width: 30px;
+            width: 25px;
             font-weight: 700;
             color: #bdc3c7;
             font-style: italic;
+            text-align: center;
+            margin-right: 5px;
         }
         .list-poster {
-            width: 45px;
-            height: 68px;
-            border-radius: 6px;
-            margin-right: 15px;
+            width: 40px;
+            height: 60px;
+            border-radius: 4px;
+            margin-right: 12px;
             background: #eee;
             object-fit: cover;
         }
         .list-info { flex: 1; min-width: 0; }
-        .list-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .list-count { font-size: 12px; color: var(--text-sub); }
-        
-        /* 底部导航 (保持一致) */
-        .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; height: 60px; background: #fff; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); display: flex; justify-content: space-around; align-items: center; z-index: 1000; }
-        .nav-item { color: #95a5a6; text-decoration: none; font-size: 10px; display: flex; flex-direction: column; align-items: center; }
-        .nav-item i { font-size: 20px; margin-bottom: 4px; }
-        .nav-item.active { color: #2c3e50; }
+        .list-title { font-size: 14px; font-weight: 600; color: #34495e; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .list-count { font-size: 12px; color: #95a5a6; }
         
         /* 筛选按钮 */
-        .filter-tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 25px; }
-        .filter-btn { border: none; background: #fff; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; color: #7f8c8d; box-shadow: 0 2px 5px rgba(0,0,0,0.05); transition: all 0.2s; }
+        .filter-tabs { display: flex; justify-content: center; gap: 8px; margin-bottom: 20px; }
+        .filter-btn { border: none; background: #fff; padding: 5px 15px; border-radius: 20px; font-size: 13px; font-weight: 600; color: #7f8c8d; box-shadow: 0 2px 5px rgba(0,0,0,0.05); transition: all 0.2s; }
         .filter-btn.active { background: #2c3e50; color: #fff; box-shadow: 0 4px 10px rgba(44, 62, 80, 0.3); }
         
         .loading-state { text-align: center; padding: 40px; color: #95a5a6; }
+        .error-state { text-align: center; padding: 30px; color: #e74c3c; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -200,25 +184,6 @@
     </div>
 </div>
 
-<div class="bottom-nav">
-    <a href="/" class="nav-item">
-        <i class="fas fa-chart-pie"></i>
-        <span>仪表盘</span>
-    </a>
-    <a href="/content" class="nav-item active">
-        <i class="fas fa-trophy"></i>
-        <span>排行</span>
-    </a>
-    <a href="/report" class="nav-item">
-        <i class="fas fa-print"></i>
-        <span>工坊</span>
-    </a>
-    <a href="/users" class="nav-item">
-        <i class="fas fa-users"></i>
-        <span>用户</span>
-    </a>
-</div>
-
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script>
     // 初始化
@@ -226,7 +191,7 @@
         loadData('week');
     });
 
-    // 切换筛选
+    // 切换筛选按钮样式
     const btns = document.querySelectorAll('.filter-btn');
     btns.forEach(btn => {
         btn.addEventListener('click', function() {
@@ -239,19 +204,9 @@
         const area = document.getElementById('content-area');
         area.innerHTML = '<div class="loading-state"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
 
-        // 映射 API 参数
-        const apiPeriod = period === 'all' ? '' : period; // 假设API空值或all为全量，具体看后端
-        // 这里需要对齐您的后端API，如果是 /api/stats/top_movies，参数可能是 category=all&period=xxx
-        // 假设您的后端接受 period 参数，或者您是在前端过滤。
-        // 根据之前的代码，后端可能是 /api/stats/top_movies?category=all&period=week
-        
-        // 修正：复用之前的后端逻辑
-        // 如果后端还不支持 period 参数，这里只是演示前端。假设后端支持。
-        // 如果不支持，您可以改回之前固定的 URL。
-        
-        let url = `/api/stats/top_movies?user_id=all&category=all`; 
-        // 临时处理：如果后端没适配 period，这里可能只返回全量。
-        // 但前端布局已经准备好接收数据了。
+        // 🔥 修正 API URL：带上 period 参数，确保后端能正确过滤
+        // 增加 sort_by=count 确保按播放量排序
+        const url = `/api/stats/top_movies?user_id=all&category=all&period=${period}&sort_by=count`; 
         
         axios.get(url)
             .then(res => {
@@ -263,31 +218,32 @@
                 renderPodium(list);
             })
             .catch(err => {
-                console.error(err);
-                area.innerHTML = '<div class="loading-state" style="color:red">加载失败</div>';
+                console.error("加载失败详情:", err);
+                area.innerHTML = '<div class="error-state"><i class="fas fa-exclamation-circle"></i> 数据加载失败<br>请检查后端日志</div>';
             });
     }
 
     function renderPodium(list) {
+        // 确保数据足够
         const top3 = list.slice(0, 3);
         const rest = list.slice(3, 20); // 取前20名
 
         let html = '';
 
-        // 1. 领奖台区域 (如果有数据)
+        // 1. 领奖台区域 (Flexbox 布局)
         if (top3.length > 0) {
             html += '<div class="podium-container">';
             
-            // 为了配合 CSS order 属性 (2-1-3 布局)，我们直接按顺序输出 div
-            // CSS 会自动把 rank-1 放到中间，rank-2 放到左边，rank-3 放到右边
-            
-            // 补充不足3个的情况 (防止布局崩坏)
-            // 其实不用补，flexbox 会自动居中
-            
+            // 遍历 Top 3
             top3.forEach((item, index) => {
                 const rank = index + 1;
-                // 加上 ?v=2 防止缓存
-                const imgUrl = `/api/proxy/image/${item.ItemId}/primary?v=2`;
+                // 海报防缓存
+                const imgUrl = `/api/proxy/image/${item.ItemId}/primary?v=3`;
+                
+                // 注意：这里我们按 1, 2, 3 的顺序生成 HTML
+                // 但是 CSS 的 order 属性会把它们重新排列成：2 (左), 1 (中), 3 (右)
+                // 修正：实际上 CSS order: 1 是最左，2 是中间，3 是最右
+                // 所以 .rank-2 { order: 1 } (左), .rank-1 { order: 2 } (中), .rank-3 { order: 3 } (右)
                 
                 html += `
                 <div class="podium-item rank-${rank}">
@@ -297,7 +253,7 @@
                     </div>
                     <div class="info-box">
                         <div class="item-title">${item.ItemName}</div>
-                        <div class="play-count"><i class="fas fa-play-circle"></i> ${item.PlayCount}次</div>
+                        <div class="play-count">${item.PlayCount}次</div>
                     </div>
                 </div>
                 `;
@@ -310,7 +266,7 @@
             html += '<div class="list-container">';
             rest.forEach((item, index) => {
                 const rank = index + 4;
-                const imgUrl = `/api/proxy/image/${item.ItemId}/primary?v=2`;
+                const imgUrl = `/api/proxy/image/${item.ItemId}/primary?v=3`;
                 
                 html += `
                 <div class="list-item">
