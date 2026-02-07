@@ -47,12 +47,12 @@
 
     <aside class="w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex-col hidden md:flex z-50 shadow-sm relative shrink-0 transition-colors duration-300">
         
-        <div class="h-20 flex items-center justify-center px-6 border-b border-gray-100 dark:border-gray-800 shrink-0">
+        <div class="h-32 flex items-center justify-center px-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
             <img src="/static/img/logo-light.png" alt="EmbyPulse" 
-                 class="h-10 w-auto object-contain block dark:hidden transition-opacity duration-300">
+                 class="h-20 w-auto max-w-full object-contain block dark:hidden transition-opacity duration-300">
             
             <img src="/static/img/logo-dark.png" alt="EmbyPulse" 
-                 class="h-10 w-auto object-contain hidden dark:block transition-opacity duration-300">
+                 class="h-20 w-auto max-w-full object-contain hidden dark:block transition-opacity duration-300">
         </div>
         
         <nav class="flex-1 px-4 py-6 space-y-2">
@@ -112,12 +112,12 @@
     <div id="mobile-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/50 z-[60] hidden backdrop-blur-sm transition-opacity"></div>
     <aside id="mobile-sidebar" class="fixed inset-y-0 left-0 w-64 bg-white dark:bg-gray-900 z-[70] shadow-2xl flex flex-col sidebar-closed md:hidden transition-colors duration-300">
         
-        <div class="h-16 flex items-center justify-between px-6 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 shrink-0">
+        <div class="h-24 flex items-center justify-between px-6 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 shrink-0">
             <div class="flex items-center">
-                <img src="/static/img/logo-light.png" alt="EmbyPulse" class="h-8 w-auto object-contain block dark:hidden">
-                <img src="/static/img/logo-dark.png" alt="EmbyPulse" class="h-8 w-auto object-contain hidden dark:block">
+                <img src="/static/img/logo-light.png" alt="EmbyPulse" class="h-14 w-auto object-contain block dark:hidden">
+                <img src="/static/img/logo-dark.png" alt="EmbyPulse" class="h-14 w-auto object-contain hidden dark:block">
             </div>
-            <button onclick="toggleSidebar()" class="text-gray-500 dark:text-gray-400"><i class="fa-solid fa-xmark text-xl"></i></button>
+            <button onclick="toggleSidebar()" class="text-gray-500 dark:text-gray-400 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
         </div>
 
         <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
