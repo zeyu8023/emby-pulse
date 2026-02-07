@@ -47,10 +47,10 @@ async def logout(response: Response):
     return res
 
 # -------------------------------------------------------------------------
-# 页面路由 - 注册所有可能的路径
+# 页面路由 (严格匹配侧边栏链接)
 # -------------------------------------------------------------------------
 
-# 1. 仪表盘 (Dashboard)
+# 1. 仪表盘
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     if not check_login(request): return RedirectResponse("/login")
@@ -68,34 +68,34 @@ async def content_page(request: Request):
     if not check_login(request): return RedirectResponse("/login")
     return templates.TemplateResponse("content.html", {"request": request})
 
-# 4. 数据洞察 (注册两个路径以防万一)
+# 4. 数据洞察 (Details)
 @router.get("/details", response_class=HTMLResponse)
-@router.get("/data", response_class=HTMLResponse) 
 async def details_page(request: Request):
     if not check_login(request): return RedirectResponse("/login")
     return templates.TemplateResponse("details.html", {"request": request})
 
-# 5. 映迹工坊 (报表)
+# 5. 映迹工坊 (Report)
 @router.get("/report", response_class=HTMLResponse)
 async def report_page(request: Request):
     if not check_login(request): return RedirectResponse("/login")
     return templates.TemplateResponse("report.html", {"request": request})
 
-# 6. 机器人助手
+# 6. 机器人助手 (Bot)
 @router.get("/bot", response_class=HTMLResponse)
 async def bot_page(request: Request):
     if not check_login(request): return RedirectResponse("/login")
     return templates.TemplateResponse("bot.html", {"request": request})
 
-# 7. 用户管理
+# 7. 用户管理 (Users) - 对应 users.html
 @router.get("/users", response_class=HTMLResponse)
 async def users_page(request: Request):
     if not check_login(request): return RedirectResponse("/login")
     return templates.TemplateResponse("users.html", {"request": request})
 
-# 8. 系统设置
-@router.get("/system", response_class=HTMLResponse)
+# 8. 系统设置 (Settings) - 对应 system.html
+# 🔥 修正：同时支持 /settings 和 /system，指向 system.html
 @router.get("/settings", response_class=HTMLResponse)
+@router.get("/system", response_class=HTMLResponse)
 async def system_page(request: Request):
     if not check_login(request): return RedirectResponse("/login")
     return templates.TemplateResponse("system.html", {"request": request})
