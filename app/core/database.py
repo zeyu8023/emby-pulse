@@ -3,7 +3,7 @@ import os
 from app.core.config import cfg, DB_PATH
 
 def init_db():
-    # 确保目录存在
+    # 确保数据库目录存在
     db_dir = os.path.dirname(DB_PATH)
     if not os.path.exists(db_dir):
         try:
@@ -14,7 +14,8 @@ def init_db():
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
-        # 1. 用户表
+        # 1. 只创建机器人专属的配置表 (users_meta)
+        # 不去碰插件的 PlaybackActivity 表，防止冲突
         c.execute('''CREATE TABLE IF NOT EXISTS users_meta (
                         user_id TEXT PRIMARY KEY,
                         expire_date TEXT,
@@ -22,47 +23,9 @@ def init_db():
                         created_at TEXT
                     )''')
         
-        # 2. 播放记录表
-        c.execute('''CREATE TABLE IF NOT EXISTS PlaybackActivity (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id TEXT,
-                        user_name TEXT,
-                        item_id TEXT,
-                        item_name TEXT,
-                        item_type TEXT,
-                        device_name TEXT,
-                        client TEXT,
-                        date_created TEXT,
-                        playback_ticks INTEGER DEFAULT 0
-                    )''')
-        
-        # 3. 自动迁移：检查并补全字段
-        c.execute("PRAGMA table_info(PlaybackActivity)")
-        columns = [row[1] for row in c.fetchall()]
-        
-        # 需要确保存在的字段列表
-        required_cols = [
-            ("user_id", "TEXT"),
-            ("user_name", "TEXT"),
-            ("item_id", "TEXT"),
-            ("item_name", "TEXT"),
-            ("item_type", "TEXT"), 
-            ("device_name", "TEXT"),
-            ("client", "TEXT"),
-            ("playback_ticks", "INTEGER DEFAULT 0") # 🔥 新增：记录播放时长
-        ]
-        
-        for col_name, col_type in required_cols:
-            if col_name not in columns:
-                print(f"🛠️ 数据库升级: 正在添加列 '{col_name}'...")
-                try:
-                    c.execute(f"ALTER TABLE PlaybackActivity ADD COLUMN {col_name} {col_type}")
-                except Exception as e:
-                    print(f"⚠️ 添加列失败: {e}")
-
         conn.commit()
         conn.close()
-        print("✅ Database initialized & checked.")
+        print("✅ Database initialized (Read-Only Mode for PlaybackActivity).")
     except Exception as e: 
         print(f"❌ DB Init Error: {e}")
 
@@ -88,14 +51,15 @@ def query_db(query, args=(), one=False):
 def get_base_filter(user_id_filter):
     where = "WHERE 1=1"
     params = []
+    # 注意：插件数据库的列名通常是 UserId (PascalCase)
     if user_id_filter and user_id_filter != 'all':
-        where += " AND user_id = ?"
+        where += " AND UserId = ?"
         params.append(user_id_filter)
     
     hidden = cfg.get("hidden_users")
     if (not user_id_filter or user_id_filter == 'all') and hidden and len(hidden) > 0:
         placeholders = ','.join(['?'] * len(hidden))
-        where += f" AND user_id NOT IN ({placeholders})"
+        where += f" AND UserId NOT IN ({placeholders})"
         params.extend(hidden)
         
     return where, params
