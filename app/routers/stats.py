@@ -7,7 +7,6 @@ import requests
 router = APIRouter()
 
 # --- 内部工具函数：获取用户映射 ---
-# 独立于 bot_service，防止循环依赖导致 API 崩溃
 def get_user_map_local():
     user_map = {}
     key = cfg.get("emby_api_key")
@@ -27,7 +26,6 @@ def api_dashboard(user_id: Optional[str] = None):
     try:
         where, params = get_base_filter(user_id)
         plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where}", params)[0]['c']
-        # 活跃用户：过去30天有播放记录的
         users = query_db(f"SELECT COUNT(DISTINCT UserId) as c FROM PlaybackActivity {where} AND DateCreated > date('now', '-30 days')", params)[0]['c']
         dur = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {where}", params)[0]['c'] or 0
         
@@ -38,7 +36,6 @@ def api_dashboard(user_id: Optional[str] = None):
         host = cfg.get("emby_host")
         if key and host:
             try:
-                # 增加超时，防止卡住
                 res = requests.get(f"{host}/emby/Items/Counts?api_key={key}", timeout=5)
                 if res.status_code == 200:
                     d = res.json()
@@ -59,7 +56,7 @@ def api_dashboard(user_id: Optional[str] = None):
 def api_recent_activity(user_id: Optional[str] = None):
     try:
         where, params = get_base_filter(user_id)
-        # 获取最近 50 条记录
+        # 获取最近 50 条，前端只显示前 10 条
         results = query_db(f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 50", params)
         
         if not results: 
@@ -69,7 +66,6 @@ def api_recent_activity(user_id: Optional[str] = None):
         data = []
         for row in results:
             item = dict(row)
-            # 填充用户名，没有则显示 User
             item['UserName'] = user_map.get(item['UserId'], "User")
             item['DisplayName'] = item['ItemName']
             data.append(item)
@@ -79,7 +75,7 @@ def api_recent_activity(user_id: Optional[str] = None):
         print(f"⚠️ Recent Activity Error: {e}")
         return {"status": "error", "data": []}
 
-# 🔥 新增接口：获取最近入库 (用于仪表盘双栏展示)
+# 🔥 核心修复：获取最近入库
 @router.get("/api/stats/latest")
 def api_latest_media(limit: int = 10):
     key = cfg.get("emby_api_key")
@@ -87,16 +83,19 @@ def api_latest_media(limit: int = 10):
     if not key or not host: return {"status": "error", "data": []}
     
     try:
-        # 调用 Emby API 获取最新入库的电影和剧集
-        # Fields=ProductionYear,CommunityRating 以获取年份和评分
-        url = f"{host}/emby/Items?SortBy=DateCreated&SortOrder=Descending&IncludeItemTypes=Movie,Series&Limit={limit}&Recursive=true&Fields=ProductionYear,CommunityRating&api_key={key}"
-        res = requests.get(url, timeout=10)
+        # ✅ 修复方案：
+        # 1. 移除 'Fields' 参数，防止 Emby 4.10+ 计算过载
+        # 2. 增加 EnableTotalRecordCount=false 减少 DB 压力
+        # 3. 限制只查询 Movie 和 Series (剧集层面)，避免展示单集刷屏
+        query = f"SortBy=DateCreated&SortOrder=Descending&IncludeItemTypes=Movie,Series&Limit={limit}&Recursive=true&EnableTotalRecordCount=false&api_key={key}"
+        url = f"{host}/emby/Items?{query}"
+        
+        res = requests.get(url, timeout=15)
         
         if res.status_code == 200:
             items = res.json().get("Items", [])
             data = []
             for item in items:
-                # 统一数据格式方便前端渲染
                 data.append({
                     "Id": item.get("Id"),
                     "Name": item.get("Name"),
@@ -107,6 +106,9 @@ def api_latest_media(limit: int = 10):
                     "DateCreated": item.get("DateCreated")
                 })
             return {"status": "success", "data": data}
+        else:
+            print(f"Latest API HTTP Error: {res.status_code} - {res.text}")
+            
     except Exception as e:
         print(f"Latest API Error: {e}")
         
@@ -120,7 +122,6 @@ def api_live_sessions():
     try:
         res = requests.get(f"{host}/emby/Sessions?api_key={key}", timeout=3)
         if res.status_code == 200: 
-            # 只返回正在播放的会话
             return {"status": "success", "data": [s for s in res.json() if s.get("NowPlayingItem")]}
     except: pass
     return {"status": "success", "data": []}
@@ -132,24 +133,20 @@ def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by
         if category == 'Movie': where += " AND ItemType = 'Movie'"
         elif category == 'Episode': where += " AND ItemType = 'Episode'"
         
-        # 限制查询量，优化性能
         sql = f"SELECT ItemName, ItemId, ItemType, PlayDuration FROM PlaybackActivity {where} LIMIT 5000"
         rows = query_db(sql, params)
         
         aggregated = {}
         for row in rows:
-            # 清洗标题，合并 'Series - Episode'
             clean = row['ItemName'].split(' - ')[0]
             if clean not in aggregated: 
                 aggregated[clean] = {'ItemName': clean, 'ItemId': row['ItemId'], 'PlayCount': 0, 'TotalTime': 0}
-            
             aggregated[clean]['PlayCount'] += 1
             aggregated[clean]['TotalTime'] += (row['PlayDuration'] or 0)
             aggregated[clean]['ItemId'] = row['ItemId']
             
         res = list(aggregated.values())
         res.sort(key=lambda x: x['TotalTime'] if sort_by == 'time' else x['PlayCount'], reverse=True)
-        
         return {"status": "success", "data": res[:50]}
     except: return {"status": "error", "data": []}
 
@@ -157,19 +154,14 @@ def api_top_movies(user_id: Optional[str] = None, category: str = 'all', sort_by
 def api_user_details(user_id: Optional[str] = None):
     try:
         where, params = get_base_filter(user_id)
-        
-        # 1. 小时分布
         h_res = query_db(f"SELECT strftime('%H', DateCreated) as Hour, COUNT(*) as Plays FROM PlaybackActivity {where} GROUP BY Hour", params)
         h_data = {str(i).zfill(2): 0 for i in range(24)}
         if h_res:
             for r in h_res: h_data[r['Hour']] = r['Plays']
             
-        # 2. 设备分布
         d_res = query_db(f"SELECT COALESCE(DeviceName, ClientName, 'Unknown') as Device, COUNT(*) as Plays FROM PlaybackActivity {where} GROUP BY Device ORDER BY Plays DESC LIMIT 10", params)
         
-        # 3. 详细日志
         l_res = query_db(f"SELECT DateCreated, ItemName, PlayDuration, COALESCE(DeviceName, ClientName) as Device, UserId FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 100", params)
-        
         u_map = get_user_map_local()
         logs = []
         if l_res:
@@ -180,7 +172,6 @@ def api_user_details(user_id: Optional[str] = None):
                 
         return {"status": "success", "data": {"hourly": h_data, "devices": [dict(r) for r in d_res] if d_res else [], "logs": logs}}
     except Exception as e: 
-        print(f"Details Error: {e}")
         return {"status": "error", "data": {"hourly": {}, "devices": [], "logs": []}}
 
 @router.get("/api/stats/chart")
@@ -188,27 +179,19 @@ def api_user_details(user_id: Optional[str] = None):
 def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'day'):
     try:
         where, params = get_base_filter(user_id)
-        
-        date_format = "%Y-%m-%d"
-        limit = "30 days"
-        
         if dimension == 'week':
-            # 按周聚合 (SQLite strftime %W)
             sql = f"SELECT strftime('%Y-%W', DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} AND DateCreated > date('now', '-120 days') GROUP BY Label ORDER BY Label"
         elif dimension == 'month':
             sql = f"SELECT strftime('%Y-%m', DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} AND DateCreated > date('now', '-365 days') GROUP BY Label ORDER BY Label"
         else:
-            # 默认按天
             sql = f"SELECT date(DateCreated) as Label, SUM(PlayDuration) as Duration FROM PlaybackActivity {where} AND DateCreated > date('now', '-30 days') GROUP BY Label ORDER BY Label"
 
         results = query_db(sql, params)
         data = {}
         if results:
             for r in results: data[r['Label']] = int(r['Duration'])
-            
         return {"status": "success", "data": data}
     except Exception as e: 
-        print(f"Chart Error: {e}")
         return {"status": "error", "data": {}}
 
 @router.get("/api/stats/poster_data")
@@ -235,24 +218,19 @@ def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
 @router.get("/api/stats/top_users_list")
 def api_top_users_list():
     try:
-        # 获取播放时长最多的前 10 名用户
         res = query_db("SELECT UserId, COUNT(*) as Plays, SUM(PlayDuration) as TotalTime FROM PlaybackActivity GROUP BY UserId ORDER BY TotalTime DESC LIMIT 10")
         if not res: return {"status": "success", "data": []}
-        
         user_map = get_user_map_local()
         hidden = cfg.get("hidden_users") or []
         data = []
-        
         for row in res:
             if row['UserId'] in hidden: continue
             u = dict(row)
             u['UserName'] = user_map.get(u['UserId'], f"User {str(u['UserId'])[:5]}")
             data.append(u)
-            if len(data) >= 5: break # 只取前5展示
-            
+            if len(data) >= 5: break
         return {"status": "success", "data": data}
     except Exception as e: 
-        print(f"Top Users Error: {e}")
         return {"status": "success", "data": []}
 
 @router.get("/api/stats/badges")

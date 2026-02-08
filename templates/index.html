@@ -2,8 +2,14 @@
 {% block title %}仪表盘 - EmbyPulse{% endblock %}
 {% block head %}
 <style>
+    /* 强制统一全局字体 */
     body, .sidebar { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }
-    
+
+    /* 隐藏滚动条但保留滚动功能 */
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* 玻璃卡片样式优化 */
     .glass-card { 
         background: white; 
         border: 1px solid #f3f4f6; 
@@ -12,14 +18,15 @@
         box-shadow: 0 2px 4px rgba(0,0,0,0.02);
         transition: all 0.3s ease;
     }
+    /* 暗色模式适配 */
     html.dark .glass-card {
-        background: #1f2937;
-        border-color: #374151;
+        background: #1f2937; /* gray-800 */
+        border-color: #374151; /* gray-700 */
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
     }
     .glass-card:hover { transform: translateY(-2px); box-shadow: 0 8px 12px rgba(0,0,0,0.05); }
     
-    /* 统计小图标样式 */
+    /* 数据项样式 */
     .stat-mini-item {
         display: flex;
         align-items: center;
@@ -66,13 +73,13 @@
             </span>
             <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">正在播放</h3>
         </div>
-        <div id="live-container" class="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-x-auto pb-2 snap-x"></div>
+        <div id="live-container" class="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-x-auto hide-scrollbar pb-2 snap-x"></div>
         <hr class="border-gray-100 dark:border-gray-800 mt-6 mb-2">
     </div>
 
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
         
-        <div class="glass-card flex flex-col gap-6">
+        <div class="glass-card flex flex-col gap-6 overflow-hidden">
             <div>
                 <h3 class="text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 flex items-center">
                     <i class="fa-solid fa-database mr-2"></i>媒体库统计
@@ -111,13 +118,14 @@
                     </h3>
                     <span class="text-[10px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-md font-bold">LATEST</span>
                 </div>
-                <div id="latest-container" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                    <div class="col-span-full py-8 text-center text-xs text-gray-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...</div>
+                
+                <div id="latest-container" class="flex overflow-x-auto hide-scrollbar gap-3 snap-x md:grid md:grid-cols-5 md:gap-3 md:overflow-visible">
+                    <div class="w-full py-8 text-center text-xs text-gray-400 md:col-span-5 flex-shrink-0"><i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...</div>
                 </div>
             </div>
         </div>
 
-        <div class="glass-card flex flex-col gap-6">
+        <div class="glass-card flex flex-col gap-6 overflow-hidden">
             <div>
                 <h3 class="text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 flex items-center">
                     <i class="fa-solid fa-chart-pie mr-2"></i>运营概况
@@ -156,8 +164,9 @@
                     </h3>
                     <span class="text-[10px] bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-md font-bold">RECENT</span>
                 </div>
-                <div id="recent-container" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                    <div class="col-span-full py-8 text-center text-xs text-gray-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...</div>
+                
+                <div id="recent-container" class="flex overflow-x-auto hide-scrollbar gap-3 snap-x md:grid md:grid-cols-5 md:gap-3 md:overflow-visible">
+                    <div class="w-full py-8 text-center text-xs text-gray-400 md:col-span-5 flex-shrink-0"><i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...</div>
                 </div>
             </div>
         </div>
@@ -333,7 +342,7 @@
         } catch (error) { console.error(error); }
     }
     
-    // 🔥 双行5列展示 最近入库
+    // 🔥 修复：手机横滑(w-28)，桌面网格(w-full)
     async function fetchLatest() {
         const container = document.getElementById('latest-container');
         try {
@@ -347,8 +356,9 @@
                     const year = item.Year || '';
                     const rating = item.Rating ? `<span class="text-yellow-500"><i class="fa-solid fa-star text-[9px] mr-0.5"></i>${item.Rating}</span>` : '';
                     
+                    // w-28 md:w-full 关键响应式类
                     html += `
-                    <div class="group relative w-full flex-shrink-0 cursor-default">
+                    <div class="group relative w-28 md:w-full flex-shrink-0 cursor-default snap-center">
                         <div class="aspect-[2/3] rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 relative shadow-sm group-hover:shadow-md transition-all">
                             <img src="${imgUrl}" class="w-full h-full object-cover transition duration-500 group-hover:scale-110" loading="lazy" onerror="this.src='https://img.hotimg.com/a444d32a033994d5b.png'">
                             <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition"></div>
@@ -364,15 +374,15 @@
                 });
                 container.innerHTML = html;
             } else {
-                container.innerHTML = `<div class="col-span-full py-8 text-center text-xs text-gray-400">暂无新入库数据</div>`;
+                container.innerHTML = `<div class="w-full md:col-span-5 py-8 text-center text-xs text-gray-400 flex-shrink-0">暂无新入库数据</div>`;
             }
         } catch (e) { 
             console.error("Latest Error:", e);
-            container.innerHTML = `<div class="col-span-full py-8 text-center text-xs text-red-400">加载失败</div>`;
+            container.innerHTML = `<div class="w-full md:col-span-5 py-8 text-center text-xs text-red-400 flex-shrink-0">加载失败</div>`;
         }
     }
 
-    // 🔥 双行5列展示 最近播放
+    // 🔥 修复：手机横滑(w-28)，桌面网格(w-full)
     async function fetchRecentActivity(userId) {
         const container = document.getElementById('recent-container');
         try {
@@ -380,7 +390,6 @@
             const json = await res.json();
             if (json.status === 'success' && json.data.length > 0) {
                 let html = '';
-                // 限制 10 个
                 json.data.slice(0, 10).forEach(item => {
                     const displayTitle = item.DisplayName || item.ItemName;
                     const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
@@ -389,7 +398,7 @@
                     let timeStr = dateObj.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
                     
                     html += `
-                    <div class="group relative w-full flex-shrink-0 cursor-default">
+                    <div class="group relative w-28 md:w-full flex-shrink-0 cursor-default snap-center">
                         <div class="aspect-[2/3] rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 relative shadow-sm group-hover:shadow-md transition-all">
                             <img src="${imgUrl}" class="w-full h-full object-cover transition duration-500 group-hover:scale-110" loading="lazy" onerror="this.src='https://img.hotimg.com/a444d32a033994d5b.png'">
                             <div class="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/80 to-transparent">
@@ -406,7 +415,7 @@
                 });
                 container.innerHTML = html;
             } else { 
-                container.innerHTML = `<div class="col-span-full py-8 text-center text-xs text-gray-400">暂无播放记录</div>`; 
+                container.innerHTML = `<div class="w-full md:col-span-5 py-8 text-center text-xs text-gray-400 flex-shrink-0">暂无播放记录</div>`; 
             }
         } catch (e) { console.error(e); }
     }
