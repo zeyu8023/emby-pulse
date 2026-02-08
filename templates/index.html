@@ -9,9 +9,6 @@
     .hide-scrollbar::-webkit-scrollbar { display: none; }
     .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-    /* 核心魔法：只显示前 20 个 */
-    .recent-card:nth-of-type(n+21) { display: none !important; }
-    
     /* 玻璃卡片样式优化 */
     .glass-card { 
         background: white; 
@@ -153,7 +150,7 @@
     </div>
 
     <div class="glass-card p-0 overflow-hidden">
-        <div class="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-gray-100 dark:divide-gray-800">
+        <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100 dark:divide-gray-800">
             
             <div class="p-5 md:p-6 min-w-0">
                 <div class="flex items-center justify-between mb-4">
@@ -164,8 +161,8 @@
                     <span class="text-[10px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-md font-bold">NEW</span>
                 </div>
                 
-                <div id="latest-container" class="flex gap-3 overflow-x-auto hide-scrollbar pb-2 snap-x">
-                    <div class="w-full py-8 flex justify-center items-center text-gray-400 text-xs">
+                <div id="latest-container" class="grid grid-cols-2 gap-3">
+                    <div class="col-span-2 py-8 flex justify-center items-center text-gray-400 text-xs">
                         <i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载入库数据...
                     </div>
                 </div>
@@ -180,8 +177,8 @@
                     <span class="text-[10px] bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-md font-bold">HISTORY</span>
                 </div>
 
-                <div id="recent-container" class="flex gap-3 overflow-x-auto hide-scrollbar pb-2 snap-x">
-                    <div class="w-full py-8 flex justify-center items-center text-gray-400 text-xs">
+                <div id="recent-container" class="grid grid-cols-2 gap-3">
+                    <div class="col-span-2 py-8 flex justify-center items-center text-gray-400 text-xs">
                         <i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载播放记录...
                     </div>
                 </div>
@@ -214,12 +211,11 @@
 
 {% block scripts %}
 <script>
-    let trendChart = null; // 全局图表变量
-    let currentTrendDim = 'day'; // 当前图表维度
+    let trendChart = null; 
+    let currentTrendDim = 'day'; 
 
     document.getElementById('current-date').innerText = new Date().toLocaleDateString(undefined, {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
 
-    // 🌟 监听主题切换，更新图表颜色
     window.addEventListener('theme-change', () => {
         if(trendChart) {
             const isDark = document.documentElement.classList.contains('dark');
@@ -235,14 +231,11 @@
 
     async function init() {
         await loadUsers();
-        // 初始化全服数据
         fetchDashboardData('all');
-        
-        fetchLatest();           // <--- 新增：加载最近入库
-        fetchRecentActivity('all'); // 加载最近播放
-        
+        fetchLatest();           
+        fetchRecentActivity('all'); 
         fetchTopUsers();
-        initTrendChart('all', 'day'); // 默认加载日图表
+        initTrendChart('all', 'day'); 
         fetchLive(); 
         setInterval(fetchLive, 10000);
     }
@@ -269,7 +262,6 @@
                     
                     const title = item.SeriesName ? `${item.SeriesName} - ${item.Name}` : (item.Name || '未知内容');
                     
-                    // 🔥 进度计算修复
                     let percentage = 0;
                     if (item.RunTimeTicks && item.RunTimeTicks > 0) {
                         percentage = Math.round((playState.PositionTicks / item.RunTimeTicks) * 100);
@@ -330,15 +322,12 @@
         const userId = document.getElementById('dash-user-select').value;
         fetchDashboardData(userId);
         fetchRecentActivity(userId);
-        initTrendChart(userId, currentTrendDim); // 切换用户时保留当前维度
+        initTrendChart(userId, currentTrendDim); 
     }
 
-    // 🔥 切换图表维度
     function switchTrend(dim) {
         currentTrendDim = dim;
         const userId = document.getElementById('dash-user-select').value;
-        
-        // 更新按钮样式
         ['day', 'week', 'month'].forEach(d => {
             const btn = document.getElementById(`trend-btn-${d}`);
             if(d === dim) {
@@ -347,7 +336,6 @@
                 btn.className = "px-3 py-1.5 rounded-md text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-600 dark:hover:text-white transition";
             }
         });
-        
         initTrendChart(userId, dim);
     }
     
@@ -360,8 +348,6 @@
                 document.getElementById('stat-plays').innerText = data.total_plays || 0;
                 document.getElementById('stat-users').innerText = data.active_users || 0;
                 document.getElementById('stat-duration').innerText = Math.round((data.total_duration || 0) / 3600);
-                
-                // 🔥 更新库存数据
                 if(data.library) {
                     document.getElementById('lib-movies').innerText = data.library.movie || '-';
                     document.getElementById('lib-series').innerText = data.library.series || '-';
@@ -371,14 +357,12 @@
         } catch (error) { console.error(error); }
     }
     
-    // 🔥 新增：获取最近入库
+    // 🔥 修改：双列展示 (w-full)
     async function fetchLatest() {
         const container = document.getElementById('latest-container');
         try {
-            // 请求后端新接口，限制 10 条
             const res = await fetch('/api/stats/latest?limit=10');
             const json = await res.json();
-            
             if (json.status === 'success' && json.data.length > 0) {
                 let html = '';
                 json.data.forEach(item => {
@@ -387,9 +371,8 @@
                     const year = item.Year || '';
                     const rating = item.Rating ? `<span class="text-yellow-500"><i class="fa-solid fa-star text-[9px] mr-0.5"></i>${item.Rating}</span>` : '';
                     
-                    // 卡片样式：纯CSS实现，无需额外类
                     html += `
-                    <div class="group relative w-24 md:w-28 flex-shrink-0 snap-start cursor-default">
+                    <div class="group relative w-full flex-shrink-0 cursor-default">
                         <div class="aspect-[2/3] rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 relative shadow-sm group-hover:shadow-md transition-all">
                             <img src="${imgUrl}" class="w-full h-full object-cover transition duration-500 group-hover:scale-110" loading="lazy" onerror="this.src='https://img.hotimg.com/a444d32a033994d5b.png'">
                             <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition"></div>
@@ -405,15 +388,15 @@
                 });
                 container.innerHTML = html;
             } else {
-                container.innerHTML = `<div class="w-full py-8 text-center text-xs text-gray-400">暂无新入库数据</div>`;
+                container.innerHTML = `<div class="col-span-2 py-8 text-center text-xs text-gray-400">暂无新入库数据</div>`;
             }
         } catch (e) { 
             console.error("Latest Error:", e);
-            container.innerHTML = `<div class="w-full py-8 text-center text-xs text-red-400">加载失败</div>`;
+            container.innerHTML = `<div class="col-span-2 py-8 text-center text-xs text-red-400">加载失败</div>`;
         }
     }
 
-    // 🔄 修改：最近播放 (限制显示前10个)
+    // 🔥 修改：双列展示 (w-full)
     async function fetchRecentActivity(userId) {
         const container = document.getElementById('recent-container');
         try {
@@ -421,21 +404,18 @@
             const json = await res.json();
             if (json.status === 'success' && json.data.length > 0) {
                 let html = '';
-                // 🔥 这里只取前 10 个
+                // 限制 10 个
                 json.data.slice(0, 10).forEach(item => {
                     const displayTitle = item.DisplayName || item.ItemName;
                     const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
-                    
-                    // 时间处理：显示 "2小时前" 或 "10:23" 会更友好，这里简单处理为日期
                     let dateObj = new Date(item.DateCreated);
                     let dateStr = dateObj.toLocaleDateString('zh-CN', {month:'numeric', day:'numeric'});
                     let timeStr = dateObj.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
                     
                     html += `
-                    <div class="group relative w-24 md:w-28 flex-shrink-0 snap-start cursor-default">
+                    <div class="group relative w-full flex-shrink-0 cursor-default">
                         <div class="aspect-[2/3] rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 relative shadow-sm group-hover:shadow-md transition-all">
                             <img src="${imgUrl}" class="w-full h-full object-cover transition duration-500 group-hover:scale-110" loading="lazy" onerror="this.src='https://img.hotimg.com/a444d32a033994d5b.png'">
-                            
                             <div class="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/80 to-transparent">
                                 <p class="text-[9px] text-white font-medium truncate flex items-center">
                                     <i class="fa-solid fa-play text-[8px] mr-1 opacity-70"></i>${item.UserName}
@@ -450,7 +430,7 @@
                 });
                 container.innerHTML = html;
             } else { 
-                container.innerHTML = `<div class="w-full py-8 text-center text-xs text-gray-400">暂无播放记录</div>`; 
+                container.innerHTML = `<div class="col-span-2 py-8 text-center text-xs text-gray-400">暂无播放记录</div>`; 
             }
         } catch (e) { console.error(e); }
     }
@@ -486,21 +466,19 @@
     
     async function initTrendChart(userId, dimension = 'day') {
         const ctx = document.getElementById('trendChart').getContext('2d');
-        if(trendChart) trendChart.destroy(); // 销毁旧图表
+        if(trendChart) trendChart.destroy(); 
 
-        // 🔥 检测暗色模式以调整图表颜色
         const isDark = document.documentElement.classList.contains('dark');
         const gridColor = isDark ? '#374151' : '#f3f4f6';
         const textColor = isDark ? '#9ca3af' : '#9ca3af';
 
         try {
-            // 🔥 调用后端新接口，传入 dimension
             const res = await fetch(`/api/stats/trend?user_id=${userId}&dimension=${dimension}`);
             const json = await res.json();
             const data = json.data || {};
             
             const labels = Object.keys(data);
-            const values = Object.values(data).map(v => Math.round(v/3600)); // 秒转小时
+            const values = Object.values(data).map(v => Math.round(v/3600)); 
 
             let gradient = ctx.createLinearGradient(0, 0, 0, 400);
             gradient.addColorStop(0, 'rgba(59, 130, 246, 0.15)');
@@ -516,7 +494,7 @@
                         borderColor: '#3b82f6', 
                         backgroundColor: gradient, 
                         borderWidth: 2, 
-                        pointBackgroundColor: isDark ? '#1f2937' : '#fff', // 暗色时点背景变深
+                        pointBackgroundColor: isDark ? '#1f2937' : '#fff', 
                         pointBorderColor: '#3b82f6',
                         pointRadius: 3,
                         pointHoverRadius: 5,
