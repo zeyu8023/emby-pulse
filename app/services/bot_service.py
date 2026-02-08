@@ -38,12 +38,11 @@ class TelegramBot:
         proxy = cfg.get("proxy_url")
         return {"http": proxy, "https": proxy} if proxy else None
 
-    # 🔥 新增通用工具：获取管理员ID (解决所有接口的身份问题)
+    # 获取管理员ID (通用工具)
     def _get_admin_id(self):
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         if not key or not host: return None
         try:
-            # 优先查缓存或配置（这里简单起见直接查API，生产环境可缓存）
             res = requests.get(f"{host}/emby/Users?api_key={key}", timeout=5)
             if res.status_code == 200:
                 users = res.json()
@@ -231,28 +230,20 @@ class TelegramBot:
         elif text.startswith("/check"): self._cmd_check(cid)
         elif text.startswith("/help"): self._cmd_help(cid)
 
-    # 🔥 核心修复：最近入库 - 使用用户视角接口
     def _cmd_latest(self, cid):
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         try:
             user_id = self._get_admin_id()
             if not user_id: return self.send_message(cid, "❌ 错误: 无法获取 Emby 用户身份")
 
-            # 官方推荐接口: /Users/{Id}/Items/Latest
-            # 只查基础字段，速度快，不报错
+            fields = "DateCreated,Name,SeriesName,ProductionYear,Type"
             url = f"{host}/emby/Users/{user_id}/Items/Latest"
-            params = {
-                "Limit": 8,
-                "MediaTypes": "Video", 
-                "Fields": "DateCreated,Name,SeriesName,ProductionYear,Type", # 极简字段
-                "api_key": key
-            }
+            params = {"Limit": 8, "MediaTypes": "Video", "Fields": fields, "api_key": key}
             
             res = requests.get(url, params=params, timeout=15)
-            if res.status_code != 200:
-                return self.send_message(cid, f"❌ 查询失败: Emby 返回 HTTP {res.status_code}")
+            if res.status_code != 200: return self.send_message(cid, f"❌ 查询失败: Emby 返回 HTTP {res.status_code}")
 
-            items = res.json() # 官方接口直接返回 list
+            items = res.json()
             if not items: return self.send_message(cid, "📭 最近没有新入库的资源")
 
             msg = "🆕 <b>最近入库</b>\n"
@@ -266,51 +257,60 @@ class TelegramBot:
                 type_icon = "🎬" if i.get("Type") == "Movie" else "📺"
                 msg += f"\n{type_icon} {date_str} | {name}"
                 count += 1
-            
             self.send_message(cid, msg)
         except Exception as e:
-            logger.error(f"Latest Error: {e}")
             self.send_message(cid, f"❌ 查询异常: {str(e)}")
 
+    # 🔥 核心增强：解析详细技术信息（分辨率/HDR/码率）
     def _extract_tech_info(self, item):
         sources = item.get("MediaSources", [])
-        if not sources: return None
+        if not sources: return "📼 未知信息"
+        
         info_parts = []
+        # 1. 视频流信息
         video = next((s for s in sources[0].get("MediaStreams", []) if s.get("Type") == "Video"), None)
         if video:
             w = video.get("Width", 0)
+            # 分辨率判断
             if w >= 3800: res = "4K"
             elif w >= 1900: res = "1080P"
             elif w >= 1200: res = "720P"
             else: res = "SD"
+            
+            # 特效判断 (HDR/DoVi)
             extra = []
             v_range = video.get("VideoRange", "")
             title = video.get("DisplayTitle", "").upper()
             if "HDR" in v_range or "HDR" in title: extra.append("HDR")
             if "DOVI" in title or "DOLBY VISION" in title: extra.append("DoVi")
+            
             res_str = f"{res}"
             if extra: res_str += f" {' '.join(extra)}"
             info_parts.append(res_str)
+            
+            # 码率判断
             bitrate = sources[0].get("Bitrate", 0)
             if bitrate > 0:
-                mbps = int(bitrate / 1000000)
+                mbps = round(bitrate / 1000000, 1)
                 info_parts.append(f"{mbps}Mbps")
-        return " | ".join(info_parts) if info_parts else None
+                
+        return " | ".join(info_parts) if info_parts else "📼 未知信息"
 
-    # 🔥 核心修复：搜索 - 使用用户视角接口 + 精简字段
+    # 🔥 核心修复：搜索功能 (两步走策略)
     def _cmd_search(self, chat_id, text):
         parts = text.split(' ', 1)
         if len(parts) < 2: return self.send_message(chat_id, "🔍 <b>搜索格式错误</b>\n请使用: <code>/search 关键词</code>")
         keyword = parts[1].strip()
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+        
         try:
             user_id = self._get_admin_id()
-            if not user_id: return self.send_message(chat_id, "❌ 错误: 无法获取 Emby 用户身份")
+            if not user_id: return self.send_message(cid, "❌ 错误: 无法获取 Emby 用户身份")
 
             encoded_key = urllib.parse.quote(keyword)
-            # 关键修改：使用 /Users/{id}/Items 接口，并限制字段
-            # 去掉了容易导致崩坏的 MediaSources 和 ProviderIds
-            fields = "CommunityRating,ProductionYear,Genres,Overview"
+            
+            # 1️⃣ 第一步：只搜基础信息，确保不崩
+            fields = "ProductionYear,Type,Id" # 极简字段
             url = f"{host}/emby/Users/{user_id}/Items"
             params = {
                 "SearchTerm": keyword,
@@ -322,33 +322,70 @@ class TelegramBot:
             }
             
             res = requests.get(url, params=params, timeout=10)
-            
-            if res.status_code != 200:
-                logger.error(f"Search API Error: HTTP {res.status_code} - {res.text[:100]}")
-                return self.send_message(chat_id, f"❌ 搜索失败 (HTTP {res.status_code})")
+            if res.status_code != 200: return self.send_message(chat_id, f"❌ 搜索失败 (HTTP {res.status_code})")
             
             items = res.json().get("Items", [])
             if not items: return self.send_message(chat_id, f"📭 未找到与 <b>{keyword}</b> 相关的资源")
             
+            # 2️⃣ 第二步：拿到第一个结果，单独查询详细信息 (查一个不会崩)
             top = items[0]
             type_raw = top.get("Type")
             
-            name = top.get("Name")
-            year_str = f"({top.get('ProductionYear')})" if top.get('ProductionYear') else ""
-            rating = top.get("CommunityRating", "N/A")
-            genres = " / ".join(top.get("Genres", [])[:3]) or "未分类"
-            overview = top.get("Overview", "暂无简介")
-            if len(overview) > 100: overview = overview[:100] + "..."
+            # 这里的默认值先填上
+            tech_info_str = "查询中..." 
+            ep_count_str = ""
+            details = {}
+
+            try:
+                if type_raw == "Series":
+                    # 电视剧：单独查剧集信息 + 查第一集看画质
+                    # A. 查元数据
+                    meta_url = f"{host}/emby/Users/{user_id}/Items/{top['Id']}?Fields=Overview,CommunityRating,Genres,RecursiveItemCount&api_key={key}"
+                    details = requests.get(meta_url, timeout=5).json()
+                    ep_count = details.get("RecursiveItemCount", 0)
+                    ep_count_str = f"📊 共 {ep_count} 集"
+                    
+                    # B. 查第一集样本看画质
+                    sample_url = f"{host}/emby/Users/{user_id}/Items?ParentId={top['Id']}&Recursive=true&IncludeItemTypes=Episode&Limit=1&Fields=MediaSources&api_key={key}"
+                    sample_res = requests.get(sample_url, timeout=5)
+                    if sample_res.status_code == 200 and sample_res.json().get("Items"):
+                        sample_ep = sample_res.json().get("Items")[0]
+                        tech_info_str = self._extract_tech_info(sample_ep)
+                else:
+                    # 电影：直接查详情带MediaSources
+                    detail_url = f"{host}/emby/Users/{user_id}/Items/{top['Id']}?Fields=Overview,CommunityRating,Genres,MediaSources&api_key={key}"
+                    details = requests.get(detail_url, timeout=8).json()
+                    tech_info_str = self._extract_tech_info(details)
+            except Exception as e:
+                logger.error(f"Detail Fetch Error: {e}")
+                tech_info_str = "暂无技术信息"
+
+            # 3️⃣ 组装消息
+            name = details.get("Name", top.get("Name"))
+            year = details.get("ProductionYear", top.get("ProductionYear"))
+            year_str = f"({year})" if year else ""
+            rating = details.get("CommunityRating", "N/A")
+            genres = " / ".join(details.get("Genres", [])[:3]) or "未分类"
+            overview = details.get("Overview", "暂无简介")
+            if len(overview) > 120: overview = overview[:120] + "..."
+            
             type_icon = "🎬" if type_raw == "Movie" else "📺"
+            info_line = tech_info_str
+            if type_raw == "Series": info_line = f"{ep_count_str} | {tech_info_str}"
             
-            caption = (f"{type_icon} <b>{name}</b> {year_str}\n⭐️ {rating}  |  🎭 {genres}\n───────────────\n📝 <b>简介</b>: {overview}\n")
+            caption = (f"{type_icon} <b>{name}</b> {year_str}\n"
+                       f"⭐️ {rating}  |  🎭 {genres}\n"
+                       f"{info_line}\n"
+                       f"───────────────\n"
+                       f"📝 <b>简介</b>: {overview}\n")
             
+            # 其他结果列表
             if len(items) > 1:
                 caption += "\n🔎 <b>其他结果:</b>\n"
                 for i, sub in enumerate(items[1:]):
                     sub_year = f"({sub.get('ProductionYear')})" if sub.get('ProductionYear') else ""
-                    suffix = "[剧集]" if sub.get("Type") == "Series" else "[电影]"
-                    caption += f"{i+2}. {sub.get('Name')} {sub_year} {suffix}\n"
+                    sub_type = "📺" if sub.get("Type") == "Series" else "🎬"
+                    caption += f"{sub_type} {sub.get('Name')} {sub_year}\n"
             
             base_url = cfg.get("emby_public_host") or host
             if base_url.endswith('/'): base_url = base_url[:-1]
