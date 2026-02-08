@@ -216,12 +216,10 @@ class TelegramBot:
         elif text.startswith("/check"): self._cmd_check(cid)
         elif text.startswith("/help"): self._cmd_help(cid)
 
-    # 🔥 核心修复：最近入库改为官方接口 /Users/{id}/Items/Latest
-    # 这能避免 500 错误和性能问题
+    # 官方接口获取最近入库 (稳定)
     def _cmd_latest(self, cid):
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         try:
-            # 1. 查找管理员ID
             user_id = None
             try:
                 u_res = requests.get(f"{host}/emby/Users?api_key={key}", timeout=5)
@@ -235,7 +233,6 @@ class TelegramBot:
 
             if not user_id: return self.send_message(cid, "❌ 错误: 无法获取 Emby 用户身份")
 
-            # 2. 调用官方推荐接口
             fields = "DateCreated,Name,SeriesName,ProductionYear,Type,CommunityRating"
             url = f"{host}/emby/Users/{user_id}/Items/Latest"
             params = {
@@ -294,7 +291,7 @@ class TelegramBot:
                 info_parts.append(f"{mbps}Mbps")
         return " | ".join(info_parts) if info_parts else None
 
-    # 🔥 修复：搜索功能增加状态码检查和异常捕获
+    # 🔥 修复：搜索功能移除 MediaSources 和 ProviderIds 字段，防止 Emby 500
     def _cmd_search(self, chat_id, text):
         parts = text.split(' ', 1)
         if len(parts) < 2: return self.send_message(chat_id, "🔍 <b>搜索格式错误</b>\n请使用: <code>/search 关键词</code>")
@@ -302,13 +299,12 @@ class TelegramBot:
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         try:
             encoded_key = urllib.parse.quote(keyword)
-            # 减少请求字段以降低 Emby 压力
-            fields = "CommunityRating,ProductionYear,Genres,Overview,OfficialRating,ProviderIds,MediaSources"
+            # 移除复杂字段，仅保留最基础的元数据
+            fields = "CommunityRating,ProductionYear,Genres,Overview,OfficialRating"
             url = f"{host}/emby/Items?SearchTerm={encoded_key}&IncludeItemTypes=Movie,Series&Recursive=true&Fields={fields}&Limit=5&api_key={key}"
             
             res = requests.get(url, timeout=10)
             
-            # 🔥 增加 HTTP 状态码检查
             if res.status_code != 200:
                 logger.error(f"Search API Error: HTTP {res.status_code} - {res.text[:100]}")
                 return self.send_message(chat_id, f"❌ 搜索失败 (HTTP {res.status_code})")
@@ -318,25 +314,6 @@ class TelegramBot:
             
             top = items[0]
             type_raw = top.get("Type")
-            tech_info_str = "📼 未知画质"
-            ep_count_str = ""
-            
-            if type_raw == "Series":
-                try:
-                    sub_url = f"{host}/emby/Items?ParentId={top['Id']}&Recursive=true&IncludeItemTypes=Episode&Fields=MediaSources&Limit=1&api_key={key}"
-                    sub_res = requests.get(sub_url, timeout=5)
-                    if sub_res.status_code == 200:
-                        sub_data = sub_res.json()
-                        real_count = sub_data.get("TotalRecordCount", 0)
-                        ep_count_str = f"📊 库内: {real_count} 集"
-                        if sub_data.get("Items"):
-                            sample_ep = sub_data["Items"][0]
-                            parsed_tech = self._extract_tech_info(sample_ep)
-                            if parsed_tech: tech_info_str = f"📼 {parsed_tech}"
-                except: ep_count_str = "📊 库内: N/A 集"
-            else:
-                parsed_tech = self._extract_tech_info(top)
-                if parsed_tech: tech_info_str = f"📼 {parsed_tech}"
             
             name = top.get("Name")
             year_str = f"({top.get('ProductionYear')})" if top.get('ProductionYear') else ""
@@ -345,10 +322,8 @@ class TelegramBot:
             overview = top.get("Overview", "暂无简介")
             if len(overview) > 100: overview = overview[:100] + "..."
             type_icon = "🎬" if type_raw == "Movie" else "📺"
-            info_line = tech_info_str
-            if type_raw == "Series": info_line = f"{ep_count_str} | {tech_info_str}"
             
-            caption = (f"{type_icon} <b>{name}</b> {year_str}\n⭐️ {rating}  |  🎭 {genres}\n{info_line}\n───────────────\n📝 <b>简介</b>: {overview}\n")
+            caption = (f"{type_icon} <b>{name}</b> {year_str}\n⭐️ {rating}  |  🎭 {genres}\n───────────────\n📝 <b>简介</b>: {overview}\n")
             
             if len(items) > 1:
                 caption += "\n🔎 <b>其他结果:</b>\n"
@@ -368,7 +343,7 @@ class TelegramBot:
             
         except Exception as e:
             logger.error(f"Search Error: {e}")
-            self.send_message(chat_id, "❌ 搜索时发生错误，请稍后重试")
+            self.send_message(chat_id, "❌ 搜索时发生错误")
 
     def _cmd_stats(self, chat_id, period='day'):
         where, params = get_base_filter('all') 
