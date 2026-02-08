@@ -79,6 +79,39 @@ def api_recent_activity(user_id: Optional[str] = None):
         print(f"⚠️ Recent Activity Error: {e}")
         return {"status": "error", "data": []}
 
+# 🔥 新增接口：获取最近入库 (用于仪表盘双栏展示)
+@router.get("/api/stats/latest")
+def api_latest_media(limit: int = 10):
+    key = cfg.get("emby_api_key")
+    host = cfg.get("emby_host")
+    if not key or not host: return {"status": "error", "data": []}
+    
+    try:
+        # 调用 Emby API 获取最新入库的电影和剧集
+        # Fields=ProductionYear,CommunityRating 以获取年份和评分
+        url = f"{host}/emby/Items?SortBy=DateCreated&SortOrder=Descending&IncludeItemTypes=Movie,Series&Limit={limit}&Recursive=true&Fields=ProductionYear,CommunityRating&api_key={key}"
+        res = requests.get(url, timeout=10)
+        
+        if res.status_code == 200:
+            items = res.json().get("Items", [])
+            data = []
+            for item in items:
+                # 统一数据格式方便前端渲染
+                data.append({
+                    "Id": item.get("Id"),
+                    "Name": item.get("Name"),
+                    "SeriesName": item.get("SeriesName", ""),
+                    "Year": item.get("ProductionYear"),
+                    "Rating": item.get("CommunityRating"),
+                    "Type": item.get("Type"),
+                    "DateCreated": item.get("DateCreated")
+                })
+            return {"status": "success", "data": data}
+    except Exception as e:
+        print(f"Latest API Error: {e}")
+        
+    return {"status": "error", "data": []}
+
 @router.get("/api/live")
 def api_live_sessions():
     key = cfg.get("emby_api_key")
@@ -180,8 +213,6 @@ def api_chart_stats(user_id: Optional[str] = None, dimension: str = 'day'):
 
 @router.get("/api/stats/poster_data")
 def api_poster_data(user_id: Optional[str] = None, period: str = 'all'):
-    # ... (保持原样，或者如果您需要我也一起贴出来)
-    # 为节省篇幅，这里复用您已有的逻辑，只需确保 query_db 可用
     try:
         where_base, params = get_base_filter(user_id)
         date_filter = ""
@@ -226,7 +257,6 @@ def api_top_users_list():
 
 @router.get("/api/stats/badges")
 def api_badges(user_id: Optional[str] = None):
-    # ... (逻辑不变，确保 query_db 可用即可) ...
     try:
         where, params = get_base_filter(user_id); badges = []
         night_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {where} AND strftime('%H', DateCreated) BETWEEN '02' AND '05'", params)

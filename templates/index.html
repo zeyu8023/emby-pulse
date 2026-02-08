@@ -152,12 +152,41 @@
         </div>
     </div>
 
-    <div>
-        <h3 class="text-base font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center px-1"><i class="fa-solid fa-clock-rotate-left text-gray-400 mr-2"></i> 最近播放</h3>
-        <div class="flex md:grid md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3 overflow-x-auto hide-scrollbar pb-4 snap-x" id="recent-container">
-            <div class="col-span-full py-10 w-full flex justify-center items-center text-gray-400 bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
-                <i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...
+    <div class="glass-card p-0 overflow-hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-gray-100 dark:divide-gray-800">
+            
+            <div class="p-5 md:p-6 min-w-0">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-base font-bold text-gray-800 dark:text-gray-200 flex items-center">
+                        <span class="w-1.5 h-4 bg-blue-500 rounded-full mr-2.5"></span>
+                        最近入库
+                    </h3>
+                    <span class="text-[10px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-md font-bold">NEW</span>
+                </div>
+                
+                <div id="latest-container" class="flex gap-3 overflow-x-auto hide-scrollbar pb-2 snap-x">
+                    <div class="w-full py-8 flex justify-center items-center text-gray-400 text-xs">
+                        <i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载入库数据...
+                    </div>
+                </div>
             </div>
+
+            <div class="p-5 md:p-6 min-w-0">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-base font-bold text-gray-800 dark:text-gray-200 flex items-center">
+                        <span class="w-1.5 h-4 bg-green-500 rounded-full mr-2.5"></span>
+                        最近播放
+                    </h3>
+                    <span class="text-[10px] bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-md font-bold">HISTORY</span>
+                </div>
+
+                <div id="recent-container" class="flex gap-3 overflow-x-auto hide-scrollbar pb-2 snap-x">
+                    <div class="w-full py-8 flex justify-center items-center text-gray-400 text-xs">
+                        <i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载播放记录...
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 
@@ -208,7 +237,10 @@
         await loadUsers();
         // 初始化全服数据
         fetchDashboardData('all');
-        fetchRecentActivity('all');
+        
+        fetchLatest();           // <--- 新增：加载最近入库
+        fetchRecentActivity('all'); // 加载最近播放
+        
         fetchTopUsers();
         initTrendChart('all', 'day'); // 默认加载日图表
         fetchLive(); 
@@ -339,6 +371,49 @@
         } catch (error) { console.error(error); }
     }
     
+    // 🔥 新增：获取最近入库
+    async function fetchLatest() {
+        const container = document.getElementById('latest-container');
+        try {
+            // 请求后端新接口，限制 10 条
+            const res = await fetch('/api/stats/latest?limit=10');
+            const json = await res.json();
+            
+            if (json.status === 'success' && json.data.length > 0) {
+                let html = '';
+                json.data.forEach(item => {
+                    const imgUrl = `/api/proxy/image/${item.Id}/primary`;
+                    const title = item.SeriesName ? `${item.SeriesName} - ${item.Name}` : item.Name;
+                    const year = item.Year || '';
+                    const rating = item.Rating ? `<span class="text-yellow-500"><i class="fa-solid fa-star text-[9px] mr-0.5"></i>${item.Rating}</span>` : '';
+                    
+                    // 卡片样式：纯CSS实现，无需额外类
+                    html += `
+                    <div class="group relative w-24 md:w-28 flex-shrink-0 snap-start cursor-default">
+                        <div class="aspect-[2/3] rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 relative shadow-sm group-hover:shadow-md transition-all">
+                            <img src="${imgUrl}" class="w-full h-full object-cover transition duration-500 group-hover:scale-110" loading="lazy" onerror="this.src='https://img.hotimg.com/a444d32a033994d5b.png'">
+                            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition"></div>
+                        </div>
+                        <div class="mt-2 px-0.5">
+                            <h4 class="text-[11px] font-bold text-gray-700 dark:text-gray-300 truncate leading-tight mb-0.5" title="${title}">${title}</h4>
+                            <div class="flex justify-between items-center text-[9px] text-gray-400">
+                                <span>${year}</span>
+                                ${rating}
+                            </div>
+                        </div>
+                    </div>`;
+                });
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = `<div class="w-full py-8 text-center text-xs text-gray-400">暂无新入库数据</div>`;
+            }
+        } catch (e) { 
+            console.error("Latest Error:", e);
+            container.innerHTML = `<div class="w-full py-8 text-center text-xs text-red-400">加载失败</div>`;
+        }
+    }
+
+    // 🔄 修改：最近播放 (限制显示前10个)
     async function fetchRecentActivity(userId) {
         const container = document.getElementById('recent-container');
         try {
@@ -346,32 +421,37 @@
             const json = await res.json();
             if (json.status === 'success' && json.data.length > 0) {
                 let html = '';
-                json.data.forEach(item => {
+                // 🔥 这里只取前 10 个
+                json.data.slice(0, 10).forEach(item => {
                     const displayTitle = item.DisplayName || item.ItemName;
                     const imgUrl = `/api/proxy/image/${item.ItemId}/primary`;
                     
-                    // 修正时间解析逻辑，不再叠加 Z
-                    let dateStr = item.DateCreated;
-                    if (dateStr && dateStr.includes(' ')) dateStr = dateStr.replace(' ', 'T');
-                    const date = new Date(dateStr).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'});
+                    // 时间处理：显示 "2小时前" 或 "10:23" 会更友好，这里简单处理为日期
+                    let dateObj = new Date(item.DateCreated);
+                    let dateStr = dateObj.toLocaleDateString('zh-CN', {month:'numeric', day:'numeric'});
+                    let timeStr = dateObj.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
                     
                     html += `
-                    <div class="group relative bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden hover:shadow-lg transition flex-shrink-0 w-28 md:w-auto snap-center recent-card">
-                        <div class="aspect-[2/3] overflow-hidden bg-gray-100 dark:bg-gray-700 relative">
-                            <img src="${imgUrl}" class="w-full h-full object-cover transition duration-700 group-hover:scale-110" loading="lazy" onerror="this.src='https://img.hotimg.com/a444d32a033994d5b.png'">
-                            <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60"></div>
-                            <div class="absolute bottom-2 left-2 right-2">
-                                <p class="text-[9px] text-gray-300 font-medium flex items-center"><i class="fa-regular fa-clock mr-1"></i>${date}</p>
-                                <p class="text-white text-[10px] font-bold truncate mt-0.5">${item.UserName}</p>
+                    <div class="group relative w-24 md:w-28 flex-shrink-0 snap-start cursor-default">
+                        <div class="aspect-[2/3] rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 relative shadow-sm group-hover:shadow-md transition-all">
+                            <img src="${imgUrl}" class="w-full h-full object-cover transition duration-500 group-hover:scale-110" loading="lazy" onerror="this.src='https://img.hotimg.com/a444d32a033994d5b.png'">
+                            
+                            <div class="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/80 to-transparent">
+                                <p class="text-[9px] text-white font-medium truncate flex items-center">
+                                    <i class="fa-solid fa-play text-[8px] mr-1 opacity-70"></i>${item.UserName}
+                                </p>
                             </div>
                         </div>
-                        <div class="p-2.5">
-                            <h4 class="text-[11px] font-bold text-gray-800 dark:text-gray-200 line-clamp-1" title="${displayTitle}">${displayTitle}</h4>
+                        <div class="mt-2 px-0.5">
+                            <h4 class="text-[11px] font-bold text-gray-700 dark:text-gray-300 truncate leading-tight mb-0.5" title="${displayTitle}">${displayTitle}</h4>
+                            <p class="text-[9px] text-gray-400">${dateStr} ${timeStr}</p>
                         </div>
                     </div>`;
                 });
                 container.innerHTML = html;
-            } else { container.innerHTML = `<div class="col-span-full py-8 text-center text-sm text-gray-400 w-full">暂无最近播放记录</div>`; }
+            } else { 
+                container.innerHTML = `<div class="w-full py-8 text-center text-xs text-gray-400">暂无播放记录</div>`; 
+            }
         } catch (e) { console.error(e); }
     }
     
