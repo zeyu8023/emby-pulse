@@ -50,16 +50,35 @@ class ReportGenerator:
         date_filter = ""
         title_period = "全量"
         
-        if period == 'week': date_filter = " AND DateCreated > date('now', '-7 days')"; title_period = "本周观影周报"
-        elif period == 'month': date_filter = " AND DateCreated > date('now', '-30 days')"; title_period = "本月观影月报"
-        elif period == 'year': date_filter = " AND DateCreated > date('now', '-1 year')"; title_period = "年度观影报告"
-        elif period == 'day': date_filter = " AND DateCreated > date('now', 'start of day')"; title_period = "今日日报"
-        else: title_period = "全量观影报告"
+        # 🔥 修改点：增加 yesterday 逻辑
+        if period == 'week': 
+            date_filter = " AND DateCreated > date('now', '-7 days')"
+            title_period = "本周观影周报"
+        elif period == 'month': 
+            date_filter = " AND DateCreated > date('now', '-30 days')"
+            title_period = "本月观影月报"
+        elif period == 'year': 
+            date_filter = " AND DateCreated > date('now', '-1 year')"
+            title_period = "年度观影报告"
+        elif period == 'day': 
+            date_filter = " AND DateCreated > date('now', 'start of day')"
+            title_period = "今日日报"
+        elif period == 'yesterday':
+            # 昨天全天：大于等于昨天0点，且小于今天0点
+            date_filter = " AND DateCreated >= date('now', '-1 day', 'start of day') AND DateCreated < date('now', 'start of day')"
+            # 获取昨天的日期字符串
+            yesterday_str = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%m-%d")
+            title_period = f"昨日日报 ({yesterday_str})"
+        else: 
+            title_period = "全量观影报告"
 
         full_where = where_base + date_filter
         
-        plays = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {full_where}", params)[0]['c']
-        dur = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {full_where}", params)[0]['c'] or 0
+        plays_res = query_db(f"SELECT COUNT(*) as c FROM PlaybackActivity {full_where}", params)
+        plays = plays_res[0]['c'] if plays_res else 0
+        
+        dur_res = query_db(f"SELECT SUM(PlayDuration) as c FROM PlaybackActivity {full_where}", params)
+        dur = dur_res[0]['c'] or 0
         hours = round(dur / 3600, 1)
         
         user_name = "Emby Server"
@@ -76,7 +95,6 @@ class ReportGenerator:
         img = Image.new('RGB', (width, height), theme['bg'])
         draw = ImageDraw.Draw(img)
         
-        # 简单绘制文字逻辑，避免过长代码，功能保留
         draw.text((40, 60), user_name, font=font_lg, fill=theme['text'])
         draw.text((40, 140), f"{title_period}", font=font_sm, fill=theme['text'])
         
