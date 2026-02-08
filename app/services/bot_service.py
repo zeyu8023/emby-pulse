@@ -119,7 +119,6 @@ class TelegramBot:
             emoji = "▶️" if action == "start" else "⏹️"; act = "开始播放" if action == "start" else "停止播放"
             ip = session.get("RemoteEndPoint", "127.0.0.1"); loc = self._get_location(ip)
             
-            # 🔥 修改点：删除了“进度”行，更加清爽
             msg = (f"{emoji} <b>【{user.get('Name')}】{act}</b>\n"
                    f"📺 {title}\n"
                    f"📚 类型：{type_cn}\n"
@@ -217,32 +216,63 @@ class TelegramBot:
         elif text.startswith("/check"): self._cmd_check(cid)
         elif text.startswith("/help"): self._cmd_help(cid)
 
-    # 🔥 修复：最近入库查询失败 (增加错误处理 + 精简 Fields)
+    # 🔥 核心修复：使用官方 /Users/{id}/Items/Latest 接口，彻底解决 500 错误
     def _cmd_latest(self, cid):
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         try:
-            # 只查必要字段，防止 Emby 4.10+ 因加载全量数据导致 500 错误
-            fields = "DateCreated,Name,SeriesName,ProductionYear"
-            url = f"{host}/emby/Items?SortBy=DateCreated&SortOrder=Descending&IncludeItemTypes=Movie,Episode&Limit=5&Recursive=true&Fields={fields}&EnableTotalRecordCount=false&api_key={key}"
+            # 1. 查找管理员ID (接口必须参数)
+            user_id = None
+            try:
+                u_res = requests.get(f"{host}/emby/Users?api_key={key}", timeout=5)
+                if u_res.status_code == 200:
+                    users = u_res.json()
+                    for u in users:
+                        if u.get("Policy", {}).get("IsAdministrator"):
+                            user_id = u['Id']; break
+                    if not user_id and users: user_id = users[0]['Id']
+            except: pass
+
+            if not user_id: return self.send_message(cid, "❌ 错误: 无法获取 Emby 用户身份")
+
+            # 2. 调用官方推荐接口
+            # 注意: 这里字段保持精简，避免数据库查询压力
+            fields = "DateCreated,Name,SeriesName,ProductionYear,Type,CommunityRating"
+            url = f"{host}/emby/Users/{user_id}/Items/Latest"
+            params = {
+                "Limit": 8,
+                "MediaTypes": "Video", # 只查视频
+                "Fields": fields,
+                "api_key": key
+            }
             
-            res = requests.get(url, timeout=15)
+            res = requests.get(url, params=params, timeout=15)
             if res.status_code != 200:
                 return self.send_message(cid, f"❌ 查询失败: Emby 返回 HTTP {res.status_code}")
 
-            items = res.json().get("Items", [])
-            if not items:
-                return self.send_message(cid, "📭 最近没有新入库的资源")
+            # 3. 处理数据 (官方接口直接返回数组，不是字典)
+            items = res.json()
+            if not items: return self.send_message(cid, "📭 最近没有新入库的资源")
 
             msg = "🆕 <b>最近入库</b>\n"
+            count = 0
             for i in items:
+                if count >= 5: break
+                # 过滤逻辑与首页保持一致
+                if i.get("Type") not in ["Movie", "Series", "Episode"]: continue
+                
                 name = i.get("Name")
                 if i.get("SeriesName"): name = f"{i.get('SeriesName')} - {name}"
+                
                 date_str = i.get("DateCreated", "")[:10]
-                msg += f"\n📅 {date_str} | {name}"
+                type_icon = "🎬" if i.get("Type") == "Movie" else "📺"
+                
+                msg += f"\n{type_icon} {date_str} | {name}"
+                count += 1
+            
             self.send_message(cid, msg)
         except Exception as e:
             logger.error(f"Latest Error: {e}")
-            self.send_message(cid, f"❌ 查询失败: {str(e)}")
+            self.send_message(cid, f"❌ 查询异常: {str(e)}")
 
     def _extract_tech_info(self, item):
         sources = item.get("MediaSources", [])
