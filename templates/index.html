@@ -2,14 +2,8 @@
 {% block title %}仪表盘 - EmbyPulse{% endblock %}
 {% block head %}
 <style>
-    /* 强制统一全局字体 */
     body, .sidebar { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }
-
-    /* 隐藏滚动条但保留滚动功能 */
-    .hide-scrollbar::-webkit-scrollbar { display: none; }
-    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-    /* 玻璃卡片样式优化 */
+    
     .glass-card { 
         background: white; 
         border: 1px solid #f3f4f6; 
@@ -18,58 +12,34 @@
         box-shadow: 0 2px 4px rgba(0,0,0,0.02);
         transition: all 0.3s ease;
     }
-    /* 暗色模式适配 */
     html.dark .glass-card {
-        background: #1f2937; /* gray-800 */
-        border-color: #374151; /* gray-700 */
+        background: #1f2937;
+        border-color: #374151;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
     }
     .glass-card:hover { transform: translateY(-2px); box-shadow: 0 8px 12px rgba(0,0,0,0.05); }
     
-    /* 数据项样式 */
-    .stat-item {
+    /* 统计小图标样式 */
+    .stat-mini-item {
         display: flex;
-        flex-direction: column;
         align-items: center;
+        gap: 12px;
+        padding: 12px;
+        background: #f9fafb;
+        border-radius: 12px;
         flex: 1;
-        padding: 0 10px;
-        position: relative;
     }
-    .stat-item:not(:last-child)::after {
-        content: '';
-        position: absolute;
-        right: 0;
-        top: 10%;
-        height: 80%;
-        width: 1px;
-        background-color: #f3f4f6;
-    }
-    html.dark .stat-item:not(:last-child)::after { background-color: #374151; }
-
-    .stat-icon {
-        width: 42px;
-        height: 42px;
-        border-radius: 10px;
+    html.dark .stat-mini-item { background: #374151; }
+    
+    .stat-mini-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-bottom: 8px;
-        font-size: 1.2rem;
+        font-size: 1rem;
     }
-    
-    /* 媒体库胶囊样式 */
-    .lib-pill {
-        background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 9999px;
-        padding: 8px 16px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        min-width: 140px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    }
-    html.dark .lib-pill { background: #1f2937; border-color: #374151; }
 </style>
 {% endblock %}
 {% block content %}
@@ -96,94 +66,100 @@
             </span>
             <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">正在播放</h3>
         </div>
-        <div id="live-container" class="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-x-auto hide-scrollbar pb-2 snap-x"></div>
+        <div id="live-container" class="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-x-auto pb-2 snap-x"></div>
         <hr class="border-gray-100 dark:border-gray-800 mt-6 mb-2">
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
         
-        <div class="glass-card flex flex-col justify-center">
-            <h3 class="text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-6 flex items-center">
-                <i class="fa-solid fa-database mr-2"></i>媒体库统计
-            </h3>
-            <div class="flex justify-between items-center w-full">
-                <div class="stat-item">
-                    <div class="stat-icon bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"><i class="fa-solid fa-film"></i></div>
-                    <span class="text-xs text-gray-400 font-medium mb-1">电影</span>
-                    <span class="text-2xl font-black text-gray-800 dark:text-gray-100" id="lib-movies">-</span>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-icon bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400"><i class="fa-solid fa-tv"></i></div>
-                    <span class="text-xs text-gray-400 font-medium mb-1">剧集</span>
-                    <span class="text-2xl font-black text-gray-800 dark:text-gray-100" id="lib-series">-</span>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-icon bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400"><i class="fa-solid fa-layer-group"></i></div>
-                    <span class="text-xs text-gray-400 font-medium mb-1">总集数</span>
-                    <span class="text-2xl font-black text-gray-800 dark:text-gray-100" id="lib-episodes">-</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="glass-card flex flex-col justify-center">
-            <h3 class="text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-6 flex items-center">
-                <i class="fa-solid fa-chart-pie mr-2"></i>运营概况
-            </h3>
-            <div class="flex justify-between items-center w-full">
-                <div class="stat-item">
-                    <div class="stat-icon bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400"><i class="fa-solid fa-play"></i></div>
-                    <span class="text-xs text-gray-400 font-medium mb-1">历史播放</span>
-                    <span class="text-2xl font-black text-gray-800 dark:text-gray-100" id="stat-plays">-</span>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-icon bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400"><i class="fa-solid fa-users"></i></div>
-                    <span class="text-xs text-gray-400 font-medium mb-1">活跃用户</span>
-                    <span class="text-2xl font-black text-gray-800 dark:text-gray-100" id="stat-users">-</span>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-icon bg-pink-50 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400"><i class="fa-solid fa-clock"></i></div>
-                    <span class="text-xs text-gray-400 font-medium mb-1">总时长 (H)</span>
-                    <span class="text-2xl font-black text-gray-800 dark:text-gray-100" id="stat-duration">-</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="glass-card p-0 overflow-hidden">
-        <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100 dark:divide-gray-800">
-            
-            <div class="p-5 md:p-6 min-w-0">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-base font-bold text-gray-800 dark:text-gray-200 flex items-center">
-                        <span class="w-1.5 h-4 bg-blue-500 rounded-full mr-2.5"></span>
-                        最近入库
-                    </h3>
-                    <span class="text-[10px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-md font-bold">NEW</span>
-                </div>
-                
-                <div id="latest-container" class="grid grid-cols-2 gap-3">
-                    <div class="col-span-2 py-8 flex justify-center items-center text-gray-400 text-xs">
-                        <i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载入库数据...
+        <div class="glass-card flex flex-col gap-6">
+            <div>
+                <h3 class="text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 flex items-center">
+                    <i class="fa-solid fa-database mr-2"></i>媒体库统计
+                </h3>
+                <div class="flex flex-wrap gap-3">
+                    <div class="stat-mini-item">
+                        <div class="stat-mini-icon bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"><i class="fa-solid fa-film"></i></div>
+                        <div>
+                            <p class="text-[10px] text-gray-400 font-bold uppercase">Movies</p>
+                            <p class="text-lg font-black text-gray-800 dark:text-white" id="lib-movies">-</p>
+                        </div>
+                    </div>
+                    <div class="stat-mini-item">
+                        <div class="stat-mini-icon bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400"><i class="fa-solid fa-tv"></i></div>
+                        <div>
+                            <p class="text-[10px] text-gray-400 font-bold uppercase">Series</p>
+                            <p class="text-lg font-black text-gray-800 dark:text-white" id="lib-series">-</p>
+                        </div>
+                    </div>
+                    <div class="stat-mini-item">
+                        <div class="stat-mini-icon bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400"><i class="fa-solid fa-layer-group"></i></div>
+                        <div>
+                            <p class="text-[10px] text-gray-400 font-bold uppercase">Episodes</p>
+                            <p class="text-lg font-black text-gray-800 dark:text-white" id="lib-episodes">-</p>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="p-5 md:p-6 min-w-0">
+            <hr class="border-gray-100 dark:border-gray-700">
+
+            <div>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-base font-bold text-gray-800 dark:text-gray-200 flex items-center">
-                        <span class="w-1.5 h-4 bg-green-500 rounded-full mr-2.5"></span>
-                        最近播放
+                        <span class="w-1.5 h-4 bg-blue-500 rounded-full mr-2.5"></span>最近入库
                     </h3>
-                    <span class="text-[10px] bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-md font-bold">HISTORY</span>
+                    <span class="text-[10px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-md font-bold">LATEST</span>
                 </div>
+                <div id="latest-container" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                    <div class="col-span-full py-8 text-center text-xs text-gray-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...</div>
+                </div>
+            </div>
+        </div>
 
-                <div id="recent-container" class="grid grid-cols-2 gap-3">
-                    <div class="col-span-2 py-8 flex justify-center items-center text-gray-400 text-xs">
-                        <i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载播放记录...
+        <div class="glass-card flex flex-col gap-6">
+            <div>
+                <h3 class="text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 flex items-center">
+                    <i class="fa-solid fa-chart-pie mr-2"></i>运营概况
+                </h3>
+                <div class="flex flex-wrap gap-3">
+                    <div class="stat-mini-item">
+                        <div class="stat-mini-icon bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400"><i class="fa-solid fa-play"></i></div>
+                        <div>
+                            <p class="text-[10px] text-gray-400 font-bold uppercase">Plays</p>
+                            <p class="text-lg font-black text-gray-800 dark:text-white" id="stat-plays">-</p>
+                        </div>
+                    </div>
+                    <div class="stat-mini-item">
+                        <div class="stat-mini-icon bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400"><i class="fa-solid fa-users"></i></div>
+                        <div>
+                            <p class="text-[10px] text-gray-400 font-bold uppercase">Users</p>
+                            <p class="text-lg font-black text-gray-800 dark:text-white" id="stat-users">-</p>
+                        </div>
+                    </div>
+                    <div class="stat-mini-item">
+                        <div class="stat-mini-icon bg-pink-50 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400"><i class="fa-solid fa-clock"></i></div>
+                        <div>
+                            <p class="text-[10px] text-gray-400 font-bold uppercase">Hours</p>
+                            <p class="text-lg font-black text-gray-800 dark:text-white" id="stat-duration">-</p>
+                        </div>
                     </div>
                 </div>
             </div>
 
+            <hr class="border-gray-100 dark:border-gray-700">
+
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-base font-bold text-gray-800 dark:text-gray-200 flex items-center">
+                        <span class="w-1.5 h-4 bg-green-500 rounded-full mr-2.5"></span>最近播放
+                    </h3>
+                    <span class="text-[10px] bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-md font-bold">RECENT</span>
+                </div>
+                <div id="recent-container" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                    <div class="col-span-full py-8 text-center text-xs text-gray-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -211,12 +187,11 @@
 
 {% block scripts %}
 <script>
-    let trendChart = null; // 全局图表变量
-    let currentTrendDim = 'day'; // 当前图表维度
+    let trendChart = null; 
+    let currentTrendDim = 'day'; 
 
     document.getElementById('current-date').innerText = new Date().toLocaleDateString(undefined, {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
 
-    // 🌟 监听主题切换，更新图表颜色
     window.addEventListener('theme-change', () => {
         if(trendChart) {
             const isDark = document.documentElement.classList.contains('dark');
@@ -232,14 +207,11 @@
 
     async function init() {
         await loadUsers();
-        // 初始化全服数据
         fetchDashboardData('all');
-        
-        fetchLatest();           // <--- 新增：加载最近入库
-        fetchRecentActivity('all'); // 加载最近播放
-        
+        fetchLatest();           
+        fetchRecentActivity('all'); 
         fetchTopUsers();
-        initTrendChart('all', 'day'); // 默认加载日图表
+        initTrendChart('all', 'day'); 
         fetchLive(); 
         setInterval(fetchLive, 10000);
     }
@@ -266,7 +238,6 @@
                     
                     const title = item.SeriesName ? `${item.SeriesName} - ${item.Name}` : (item.Name || '未知内容');
                     
-                    // 🔥 进度计算修复
                     let percentage = 0;
                     if (item.RunTimeTicks && item.RunTimeTicks > 0) {
                         percentage = Math.round((playState.PositionTicks / item.RunTimeTicks) * 100);
@@ -327,15 +298,12 @@
         const userId = document.getElementById('dash-user-select').value;
         fetchDashboardData(userId);
         fetchRecentActivity(userId);
-        initTrendChart(userId, currentTrendDim); // 切换用户时保留当前维度
+        initTrendChart(userId, currentTrendDim); 
     }
 
-    // 🔥 切换图表维度
     function switchTrend(dim) {
         currentTrendDim = dim;
         const userId = document.getElementById('dash-user-select').value;
-        
-        // 更新按钮样式
         ['day', 'week', 'month'].forEach(d => {
             const btn = document.getElementById(`trend-btn-${d}`);
             if(d === dim) {
@@ -344,7 +312,6 @@
                 btn.className = "px-3 py-1.5 rounded-md text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-600 dark:hover:text-white transition";
             }
         });
-        
         initTrendChart(userId, dim);
     }
     
@@ -357,8 +324,6 @@
                 document.getElementById('stat-plays').innerText = data.total_plays || 0;
                 document.getElementById('stat-users').innerText = data.active_users || 0;
                 document.getElementById('stat-duration').innerText = Math.round((data.total_duration || 0) / 3600);
-                
-                // 🔥 更新库存数据
                 if(data.library) {
                     document.getElementById('lib-movies').innerText = data.library.movie || '-';
                     document.getElementById('lib-series').innerText = data.library.series || '-';
@@ -368,7 +333,7 @@
         } catch (error) { console.error(error); }
     }
     
-    // 🔥 修改：双列展示 (w-full)
+    // 🔥 双行5列展示 最近入库
     async function fetchLatest() {
         const container = document.getElementById('latest-container');
         try {
@@ -399,15 +364,15 @@
                 });
                 container.innerHTML = html;
             } else {
-                container.innerHTML = `<div class="col-span-2 py-8 text-center text-xs text-gray-400">暂无新入库数据</div>`;
+                container.innerHTML = `<div class="col-span-full py-8 text-center text-xs text-gray-400">暂无新入库数据</div>`;
             }
         } catch (e) { 
             console.error("Latest Error:", e);
-            container.innerHTML = `<div class="col-span-2 py-8 text-center text-xs text-red-400">加载失败</div>`;
+            container.innerHTML = `<div class="col-span-full py-8 text-center text-xs text-red-400">加载失败</div>`;
         }
     }
 
-    // 🔥 修改：双列展示 (w-full)
+    // 🔥 双行5列展示 最近播放
     async function fetchRecentActivity(userId) {
         const container = document.getElementById('recent-container');
         try {
@@ -441,7 +406,7 @@
                 });
                 container.innerHTML = html;
             } else { 
-                container.innerHTML = `<div class="col-span-2 py-8 text-center text-xs text-gray-400">暂无播放记录</div>`; 
+                container.innerHTML = `<div class="col-span-full py-8 text-center text-xs text-gray-400">暂无播放记录</div>`; 
             }
         } catch (e) { console.error(e); }
     }
@@ -477,21 +442,19 @@
     
     async function initTrendChart(userId, dimension = 'day') {
         const ctx = document.getElementById('trendChart').getContext('2d');
-        if(trendChart) trendChart.destroy(); // 销毁旧图表
+        if(trendChart) trendChart.destroy(); 
 
-        // 🔥 检测暗色模式以调整图表颜色
         const isDark = document.documentElement.classList.contains('dark');
         const gridColor = isDark ? '#374151' : '#f3f4f6';
         const textColor = isDark ? '#9ca3af' : '#9ca3af';
 
         try {
-            // 🔥 调用后端新接口，传入 dimension
             const res = await fetch(`/api/stats/trend?user_id=${userId}&dimension=${dimension}`);
             const json = await res.json();
             const data = json.data || {};
             
             const labels = Object.keys(data);
-            const values = Object.values(data).map(v => Math.round(v/3600)); // 秒转小时
+            const values = Object.values(data).map(v => Math.round(v/3600)); 
 
             let gradient = ctx.createLinearGradient(0, 0, 0, 400);
             gradient.addColorStop(0, 'rgba(59, 130, 246, 0.15)');
@@ -507,7 +470,7 @@
                         borderColor: '#3b82f6', 
                         backgroundColor: gradient, 
                         borderWidth: 2, 
-                        pointBackgroundColor: isDark ? '#1f2937' : '#fff', // 暗色时点背景变深
+                        pointBackgroundColor: isDark ? '#1f2937' : '#fff', 
                         pointBorderColor: '#3b82f6',
                         pointRadius: 3,
                         pointHoverRadius: 5,
