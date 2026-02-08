@@ -7,7 +7,6 @@ import requests
 router = APIRouter()
 
 # --- 内部工具函数：获取第一个有效用户的ID (优先管理员) ---
-# 💡 参考 MoviePilot 逻辑：必须指定 User 才能获取准确的 Latest 视图
 def get_admin_user_id():
     key = cfg.get("emby_api_key")
     host = cfg.get("emby_host")
@@ -74,11 +73,41 @@ def api_dashboard(user_id: Optional[str] = None):
         print(f"⚠️ Dashboard DB Error: {e}")
         return {"status": "error", "data": {"total_plays":0, "library": {}}}
 
+# 🔥 新增接口：获取媒体库列表 (Views)
+@router.get("/api/stats/libraries")
+def api_get_libraries():
+    key = cfg.get("emby_api_key")
+    host = cfg.get("emby_host")
+    if not key or not host: return {"status": "error", "data": []}
+    
+    try:
+        user_id = get_admin_user_id()
+        if not user_id: return {"status": "error", "data": []}
+        
+        url = f"{host}/emby/Users/{user_id}/Views?api_key={key}"
+        res = requests.get(url, timeout=10)
+        
+        if res.status_code == 200:
+            items = res.json().get("Items", [])
+            data = []
+            for item in items:
+                data.append({
+                    "Id": item.get("Id"),
+                    "Name": item.get("Name"),
+                    "CollectionType": item.get("CollectionType", "unknown"),
+                    "Type": item.get("Type")
+                })
+            return {"status": "success", "data": data}
+    except Exception as e:
+        print(f"Libraries API Error: {e}")
+        
+    return {"status": "error", "data": []}
+
 @router.get("/api/stats/recent")
 def api_recent_activity(user_id: Optional[str] = None):
     try:
         where, params = get_base_filter(user_id)
-        # 获取最近 50 条，但前端只取前 10 条
+        # 获取最近 50 条，前端只显示前 10 条
         results = query_db(f"SELECT DateCreated, UserId, ItemId, ItemName, ItemType FROM PlaybackActivity {where} ORDER BY DateCreated DESC LIMIT 50", params)
         
         if not results: 
@@ -97,7 +126,7 @@ def api_recent_activity(user_id: Optional[str] = None):
         print(f"⚠️ Recent Activity Error: {e}")
         return {"status": "error", "data": []}
 
-# 🔥 核心重构：完全参考 MP 逻辑，使用 /Items/Latest 接口
+# 🔥 核心接口：获取最近入库 (使用 Users/Latest)
 @router.get("/api/stats/latest")
 def api_latest_media(limit: int = 10):
     key = cfg.get("emby_api_key")
@@ -105,52 +134,46 @@ def api_latest_media(limit: int = 10):
     if not key or not host: return {"status": "error", "data": []}
     
     try:
-        # 1. 获取执行查询的用户身份 (关键步骤)
+        # 1. 获取执行查询的用户身份
         user_id = get_admin_user_id()
         if not user_id:
-            print("⚠️ Latest Error: 无法获取有效的 UserID")
             return {"status": "error", "data": []}
 
         # 2. 构造 Emby 官方推荐的 Latest 接口
-        # 接口: /Users/{UserId}/Items/Latest
-        # 逻辑: 自动聚合新电影和有更新的剧集
         url = f"{host}/emby/Users/{user_id}/Items/Latest"
         
-        # 3. 参数配置 (参考 MP)
+        # 3. 参数配置
         params = {
             "Limit": 30,             # 多取一点用于过滤
             "MediaTypes": "Video",   # 只看视频
-            "Fields": "ProductionYear,CommunityRating,Path", # 按需取字段，防崩
+            "Fields": "ProductionYear,CommunityRating,Path",
             "api_key": key
         }
         
         res = requests.get(url, params=params, timeout=15)
         
         if res.status_code == 200:
-            raw_items = res.json() # Latest 接口直接返回 List，没有 "Items" 包装层
+            raw_items = res.json()
             data = []
             
-            # 4. 数据清洗 (过滤类型)
+            # 4. 数据清洗
             for item in raw_items:
                 if len(data) >= limit: break
                 
-                # 只保留 电影 和 剧集 (排除单集 Episode，除非你想看单集封面)
-                # MP 逻辑是只保留 Movie 和 Series
+                # 只保留 电影 和 剧集
                 if item.get("Type") not in ["Movie", "Series"]:
                     continue
                     
                 data.append({
                     "Id": item.get("Id"),
                     "Name": item.get("Name"),
-                    "SeriesName": item.get("SeriesName", ""), # 剧集会有这个字段
+                    "SeriesName": item.get("SeriesName", ""), 
                     "Year": item.get("ProductionYear"),
                     "Rating": item.get("CommunityRating"),
                     "Type": item.get("Type"),
                     "DateCreated": item.get("DateCreated")
                 })
             return {"status": "success", "data": data}
-        else:
-            print(f"Latest API HTTP Error: {res.status_code} - {res.text}")
             
     except Exception as e:
         print(f"Latest API Error: {e}")

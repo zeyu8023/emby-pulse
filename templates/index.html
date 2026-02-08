@@ -77,97 +77,97 @@
         <hr class="border-gray-100 dark:border-gray-800 mt-6 mb-2">
     </div>
 
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        
-        <div class="glass-card flex flex-col gap-6 overflow-hidden">
-            <div>
-                <h3 class="text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 flex items-center">
-                    <i class="fa-solid fa-database mr-2"></i>媒体库统计
-                </h3>
-                <div class="flex flex-wrap gap-3">
-                    <div class="stat-mini-item">
-                        <div class="stat-mini-icon bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"><i class="fa-solid fa-film"></i></div>
-                        <div>
-                            <p class="text-[10px] text-gray-400 font-bold uppercase">Movies</p>
-                            <p class="text-lg font-black text-gray-800 dark:text-white" id="lib-movies">-</p>
-                        </div>
-                    </div>
-                    <div class="stat-mini-item">
-                        <div class="stat-mini-icon bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400"><i class="fa-solid fa-tv"></i></div>
-                        <div>
-                            <p class="text-[10px] text-gray-400 font-bold uppercase">Series</p>
-                            <p class="text-lg font-black text-gray-800 dark:text-white" id="lib-series">-</p>
-                        </div>
-                    </div>
-                    <div class="stat-mini-item">
-                        <div class="stat-mini-icon bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400"><i class="fa-solid fa-layer-group"></i></div>
-                        <div>
-                            <p class="text-[10px] text-gray-400 font-bold uppercase">Episodes</p>
-                            <p class="text-lg font-black text-gray-800 dark:text-white" id="lib-episodes">-</p>
-                        </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="glass-card">
+            <h3 class="text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 flex items-center">
+                <i class="fa-solid fa-database mr-2"></i>媒体库统计
+            </h3>
+            <div class="flex flex-wrap gap-3">
+                <div class="stat-mini-item">
+                    <div class="stat-mini-icon bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"><i class="fa-solid fa-film"></i></div>
+                    <div>
+                        <p class="text-[10px] text-gray-400 font-bold uppercase">电影</p>
+                        <p class="text-lg font-black text-gray-800 dark:text-white" id="lib-movies">-</p>
                     </div>
                 </div>
-            </div>
-
-            <hr class="border-gray-100 dark:border-gray-700">
-
-            <div>
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-base font-bold text-gray-800 dark:text-gray-200 flex items-center">
-                        <span class="w-1.5 h-4 bg-blue-500 rounded-full mr-2.5"></span>最近入库
-                    </h3>
-                    <span class="text-[10px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-md font-bold">LATEST</span>
+                <div class="stat-mini-item">
+                    <div class="stat-mini-icon bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400"><i class="fa-solid fa-tv"></i></div>
+                    <div>
+                        <p class="text-[10px] text-gray-400 font-bold uppercase">剧集</p>
+                        <p class="text-lg font-black text-gray-800 dark:text-white" id="lib-series">-</p>
+                    </div>
                 </div>
-                
-                <div id="latest-container" class="flex overflow-x-auto hide-scrollbar gap-3 snap-x md:grid md:grid-cols-5 md:gap-3 md:overflow-visible">
-                    <div class="w-full py-8 text-center text-xs text-gray-400 md:col-span-5 flex-shrink-0"><i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...</div>
+                <div class="stat-mini-item">
+                    <div class="stat-mini-icon bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400"><i class="fa-solid fa-layer-group"></i></div>
+                    <div>
+                        <p class="text-[10px] text-gray-400 font-bold uppercase">总集数</p>
+                        <p class="text-lg font-black text-gray-800 dark:text-white" id="lib-episodes">-</p>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="glass-card flex flex-col gap-6 overflow-hidden">
-            <div>
-                <h3 class="text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 flex items-center">
-                    <i class="fa-solid fa-chart-pie mr-2"></i>运营概况
-                </h3>
-                <div class="flex flex-wrap gap-3">
-                    <div class="stat-mini-item">
-                        <div class="stat-mini-icon bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400"><i class="fa-solid fa-play"></i></div>
-                        <div>
-                            <p class="text-[10px] text-gray-400 font-bold uppercase">Plays</p>
-                            <p class="text-lg font-black text-gray-800 dark:text-white" id="stat-plays">-</p>
-                        </div>
+        <div class="glass-card">
+            <h3 class="text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 flex items-center">
+                <i class="fa-solid fa-chart-pie mr-2"></i>运营概况
+            </h3>
+            <div class="flex flex-wrap gap-3">
+                <div class="stat-mini-item">
+                    <div class="stat-mini-icon bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400"><i class="fa-solid fa-play"></i></div>
+                    <div>
+                        <p class="text-[10px] text-gray-400 font-bold uppercase">播放量</p>
+                        <p class="text-lg font-black text-gray-800 dark:text-white" id="stat-plays">-</p>
                     </div>
-                    <div class="stat-mini-item">
-                        <div class="stat-mini-icon bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400"><i class="fa-solid fa-users"></i></div>
-                        <div>
-                            <p class="text-[10px] text-gray-400 font-bold uppercase">Users</p>
-                            <p class="text-lg font-black text-gray-800 dark:text-white" id="stat-users">-</p>
-                        </div>
+                </div>
+                <div class="stat-mini-item">
+                    <div class="stat-mini-icon bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400"><i class="fa-solid fa-users"></i></div>
+                    <div>
+                        <p class="text-[10px] text-gray-400 font-bold uppercase">活跃用户</p>
+                        <p class="text-lg font-black text-gray-800 dark:text-white" id="stat-users">-</p>
                     </div>
-                    <div class="stat-mini-item">
-                        <div class="stat-mini-icon bg-pink-50 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400"><i class="fa-solid fa-clock"></i></div>
-                        <div>
-                            <p class="text-[10px] text-gray-400 font-bold uppercase">Hours</p>
-                            <p class="text-lg font-black text-gray-800 dark:text-white" id="stat-duration">-</p>
-                        </div>
+                </div>
+                <div class="stat-mini-item">
+                    <div class="stat-mini-icon bg-pink-50 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400"><i class="fa-solid fa-clock"></i></div>
+                    <div>
+                        <p class="text-[10px] text-gray-400 font-bold uppercase">总时长(H)</p>
+                        <p class="text-lg font-black text-gray-800 dark:text-white" id="stat-duration">-</p>
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <hr class="border-gray-100 dark:border-gray-700">
+    <div class="glass-card w-full">
+        <h3 class="text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 flex items-center">
+            <i class="fa-solid fa-photo-film mr-2"></i>我的媒体库
+        </h3>
+        <div id="library-container" class="flex overflow-x-auto hide-scrollbar gap-4 snap-x">
+            <div class="w-full py-4 text-center text-xs text-gray-400 flex-shrink-0"><i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...</div>
+        </div>
+    </div>
 
-            <div>
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-base font-bold text-gray-800 dark:text-gray-200 flex items-center">
-                        <span class="w-1.5 h-4 bg-green-500 rounded-full mr-2.5"></span>最近播放
-                    </h3>
-                    <span class="text-[10px] bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-md font-bold">RECENT</span>
-                </div>
-                
-                <div id="recent-container" class="flex overflow-x-auto hide-scrollbar gap-3 snap-x md:grid md:grid-cols-5 md:gap-3 md:overflow-visible">
-                    <div class="w-full py-8 text-center text-xs text-gray-400 md:col-span-5 flex-shrink-0"><i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...</div>
-                </div>
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div class="glass-card flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-base font-bold text-gray-800 dark:text-gray-200 flex items-center">
+                    <span class="w-1.5 h-4 bg-blue-500 rounded-full mr-2.5"></span>最近入库
+                </h3>
+                <span class="text-[10px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-md font-bold">LATEST</span>
+            </div>
+            <div id="latest-container" class="flex overflow-x-auto hide-scrollbar gap-3 snap-x md:grid md:grid-cols-5 md:gap-3 md:overflow-visible">
+                <div class="w-full py-8 text-center text-xs text-gray-400 md:col-span-5 flex-shrink-0"><i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...</div>
+            </div>
+        </div>
+
+        <div class="glass-card flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-base font-bold text-gray-800 dark:text-gray-200 flex items-center">
+                    <span class="w-1.5 h-4 bg-green-500 rounded-full mr-2.5"></span>最近播放
+                </h3>
+                <span class="text-[10px] bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-md font-bold">RECENT</span>
+            </div>
+            <div id="recent-container" class="flex overflow-x-auto hide-scrollbar gap-3 snap-x md:grid md:grid-cols-5 md:gap-3 md:overflow-visible">
+                <div class="w-full py-8 text-center text-xs text-gray-400 md:col-span-5 flex-shrink-0"><i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...</div>
             </div>
         </div>
     </div>
@@ -217,6 +217,7 @@
     async function init() {
         await loadUsers();
         fetchDashboardData('all');
+        fetchLibraries();        // <--- 新增：加载媒体库
         fetchLatest();           
         fetchRecentActivity('all'); 
         fetchTopUsers();
@@ -341,8 +342,36 @@
             }
         } catch (error) { console.error(error); }
     }
+
+    // 🔥 新增：加载媒体库列表
+    async function fetchLibraries() {
+        const container = document.getElementById('library-container');
+        try {
+            const res = await fetch('/api/stats/libraries');
+            const json = await res.json();
+            if (json.status === 'success' && json.data.length > 0) {
+                let html = '';
+                json.data.forEach(lib => {
+                    const imgUrl = `/api/proxy/image/${lib.Id}/primary`; // 媒体库通常用 Primary 图
+                    html += `
+                    <div class="relative w-40 md:w-56 aspect-video flex-shrink-0 rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition group cursor-pointer snap-start bg-gray-100 dark:bg-gray-800">
+                        <img src="${imgUrl}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" onerror="this.src='https://img.hotimg.com/a444d32a033994d5b.png'">
+                        <div class="absolute inset-0 bg-black/40 group-hover:bg-black/30 transition flex items-end p-3">
+                            <h4 class="text-white font-bold text-sm md:text-base drop-shadow-md truncate w-full">${lib.Name}</h4>
+                        </div>
+                    </div>`;
+                });
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = `<div class="w-full py-4 text-center text-xs text-gray-400">暂无媒体库</div>`;
+            }
+        } catch (e) {
+            console.error("Libraries Error:", e);
+            container.innerHTML = `<div class="w-full py-4 text-center text-xs text-red-400">加载失败</div>`;
+        }
+    }
     
-    // 🔥 修复：手机横滑(w-28)，桌面网格(w-full)
+    // 🔥 最近入库：手机横滑(w-28)，桌面网格(w-full)
     async function fetchLatest() {
         const container = document.getElementById('latest-container');
         try {
@@ -356,7 +385,6 @@
                     const year = item.Year || '';
                     const rating = item.Rating ? `<span class="text-yellow-500"><i class="fa-solid fa-star text-[9px] mr-0.5"></i>${item.Rating}</span>` : '';
                     
-                    // w-28 md:w-full 关键响应式类
                     html += `
                     <div class="group relative w-28 md:w-full flex-shrink-0 cursor-default snap-center">
                         <div class="aspect-[2/3] rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 relative shadow-sm group-hover:shadow-md transition-all">
@@ -382,7 +410,7 @@
         }
     }
 
-    // 🔥 修复：手机横滑(w-28)，桌面网格(w-full)
+    // 🔥 最近播放：手机横滑(w-28)，桌面网格(w-full)
     async function fetchRecentActivity(userId) {
         const container = document.getElementById('recent-container');
         try {
