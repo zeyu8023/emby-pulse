@@ -38,6 +38,22 @@ class TelegramBot:
         proxy = cfg.get("proxy_url")
         return {"http": proxy, "https": proxy} if proxy else None
 
+    # 🔥 新增通用工具：获取管理员ID (解决所有接口的身份问题)
+    def _get_admin_id(self):
+        key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
+        if not key or not host: return None
+        try:
+            # 优先查缓存或配置（这里简单起见直接查API，生产环境可缓存）
+            res = requests.get(f"{host}/emby/Users?api_key={key}", timeout=5)
+            if res.status_code == 200:
+                users = res.json()
+                for u in users:
+                    if u.get("Policy", {}).get("IsAdministrator"):
+                        return u['Id']
+                if users: return users[0]['Id']
+        except: pass
+        return None
+
     def _get_username(self, user_id):
         if user_id in self.user_cache: return self.user_cache[user_id]
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
@@ -109,7 +125,6 @@ class TelegramBot:
             item = data.get("Item", {})
             session = data.get("Session", {})
             
-            # 构建标题
             title = item.get("Name", "未知内容")
             if item.get("SeriesName"): 
                 idx = item.get("IndexNumber", 0); parent_idx = item.get("ParentIndexNumber", 1)
@@ -216,29 +231,20 @@ class TelegramBot:
         elif text.startswith("/check"): self._cmd_check(cid)
         elif text.startswith("/help"): self._cmd_help(cid)
 
-    # 官方接口获取最近入库 (稳定)
+    # 🔥 核心修复：最近入库 - 使用用户视角接口
     def _cmd_latest(self, cid):
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         try:
-            user_id = None
-            try:
-                u_res = requests.get(f"{host}/emby/Users?api_key={key}", timeout=5)
-                if u_res.status_code == 200:
-                    users = u_res.json()
-                    for u in users:
-                        if u.get("Policy", {}).get("IsAdministrator"):
-                            user_id = u['Id']; break
-                    if not user_id and users: user_id = users[0]['Id']
-            except: pass
-
+            user_id = self._get_admin_id()
             if not user_id: return self.send_message(cid, "❌ 错误: 无法获取 Emby 用户身份")
 
-            fields = "DateCreated,Name,SeriesName,ProductionYear,Type,CommunityRating"
+            # 官方推荐接口: /Users/{Id}/Items/Latest
+            # 只查基础字段，速度快，不报错
             url = f"{host}/emby/Users/{user_id}/Items/Latest"
             params = {
                 "Limit": 8,
                 "MediaTypes": "Video", 
-                "Fields": fields,
+                "Fields": "DateCreated,Name,SeriesName,ProductionYear,Type", # 极简字段
                 "api_key": key
             }
             
@@ -246,7 +252,7 @@ class TelegramBot:
             if res.status_code != 200:
                 return self.send_message(cid, f"❌ 查询失败: Emby 返回 HTTP {res.status_code}")
 
-            items = res.json()
+            items = res.json() # 官方接口直接返回 list
             if not items: return self.send_message(cid, "📭 最近没有新入库的资源")
 
             msg = "🆕 <b>最近入库</b>\n"
@@ -291,19 +297,31 @@ class TelegramBot:
                 info_parts.append(f"{mbps}Mbps")
         return " | ".join(info_parts) if info_parts else None
 
-    # 🔥 修复：搜索功能移除 MediaSources 和 ProviderIds 字段，防止 Emby 500
+    # 🔥 核心修复：搜索 - 使用用户视角接口 + 精简字段
     def _cmd_search(self, chat_id, text):
         parts = text.split(' ', 1)
         if len(parts) < 2: return self.send_message(chat_id, "🔍 <b>搜索格式错误</b>\n请使用: <code>/search 关键词</code>")
         keyword = parts[1].strip()
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         try:
+            user_id = self._get_admin_id()
+            if not user_id: return self.send_message(chat_id, "❌ 错误: 无法获取 Emby 用户身份")
+
             encoded_key = urllib.parse.quote(keyword)
-            # 移除复杂字段，仅保留最基础的元数据
-            fields = "CommunityRating,ProductionYear,Genres,Overview,OfficialRating"
-            url = f"{host}/emby/Items?SearchTerm={encoded_key}&IncludeItemTypes=Movie,Series&Recursive=true&Fields={fields}&Limit=5&api_key={key}"
+            # 关键修改：使用 /Users/{id}/Items 接口，并限制字段
+            # 去掉了容易导致崩坏的 MediaSources 和 ProviderIds
+            fields = "CommunityRating,ProductionYear,Genres,Overview"
+            url = f"{host}/emby/Users/{user_id}/Items"
+            params = {
+                "SearchTerm": keyword,
+                "IncludeItemTypes": "Movie,Series",
+                "Recursive": "true",
+                "Fields": fields,
+                "Limit": 5,
+                "api_key": key
+            }
             
-            res = requests.get(url, timeout=10)
+            res = requests.get(url, params=params, timeout=10)
             
             if res.status_code != 200:
                 logger.error(f"Search API Error: HTTP {res.status_code} - {res.text[:100]}")
