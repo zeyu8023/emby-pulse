@@ -2,30 +2,43 @@
 {% block title %}仪表盘 - EmbyPulse{% endblock %}
 {% block head %}
 <style>
-    body, .sidebar { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important; }
+    /* 全局字体优化 */
+    body, .sidebar { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important; }
+    
+    /* 隐藏滚动条 */
     .hide-scrollbar::-webkit-scrollbar { display: none; }
     .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-    /* 🖥️ 电脑端卡片：保持白底方框 */
-    @media (min-width: 768px) {
-        .glass-card { 
-            background: #ffffff; 
-            border: 1px solid #e5e7eb; 
-            border-radius: 16px; 
-            padding: 24px; 
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-            transition: all 0.2s ease;
-        }
-        html.dark .glass-card {
-            background: #1f2937; 
-            border-color: #374151; 
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-        }
-        .glass-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+    /* === 核心卡片样式 (全局生效，确保电脑端和手机端默认都有白底) === */
+    .glass-card { 
+        background-color: #ffffff; 
+        border: 1px solid #e5e7eb; 
+        border-radius: 16px; 
+        padding: 20px; 
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        transition: all 0.2s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    /* 暗色模式适配 */
+    html.dark .glass-card {
+        background-color: #1f2937; 
+        border-color: #374151; 
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
     }
 
-    /* 📱 手机端特化样式 */
+    /* 电脑端悬停效果 */
+    @media (min-width: 768px) {
+        .glass-card:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); 
+        }
+    }
+
+    /* === 手机端特化样式 === */
     @media (max-width: 767px) {
+        /* 🔥 关键修复：只针对带有此类的元素去背景，不影响侧边栏 */
         .mobile-borderless {
             background: transparent !important;
             border: none !important;
@@ -34,9 +47,16 @@
             border-radius: 0 !important;
         }
         
+        /* 手机端统计卡片紧凑一点 */
         .stat-card-mobile {
             padding: 16px !important;
             margin-bottom: 0 !important;
+        }
+        
+        /* 手机端标题调整 */
+        .section-title-mobile {
+            margin-bottom: 12px !important;
+            padding-left: 4px;
         }
     }
     
@@ -44,9 +64,9 @@
     .stat-mini-item {
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 10px;
         padding: 10px 12px;
-        background: #f9fafb;
+        background: #f3f4f6; /* gray-100 */
         border-radius: 12px;
         flex: 1;
         min-width: 0;
@@ -55,13 +75,13 @@
     html.dark .stat-mini-item { background: rgba(55, 65, 81, 0.5); }
     
     .stat-mini-icon {
-        width: 36px;
-        height: 36px;
-        border-radius: 10px;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1rem;
+        font-size: 0.9rem;
         flex-shrink: 0;
     }
 </style>
@@ -92,26 +112,26 @@
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <div class="glass-card stat-card-mobile">
-            <h3 class="text-xs md:text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 flex items-center"><i class="fa-solid fa-database mr-2"></i>媒体库</h3>
+            <h3 class="text-xs md:text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3 flex items-center"><i class="fa-solid fa-database mr-2"></i>媒体库</h3>
             <div class="flex gap-3 overflow-x-auto hide-scrollbar">
-                <div class="stat-mini-item"><div class="stat-mini-icon bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"><i class="fa-solid fa-film"></i></div><div><p class="text-[10px] text-gray-400 font-bold">电影</p><p class="text-lg md:text-2xl font-black text-gray-800 dark:text-white truncate" id="lib-movies">-</p></div></div>
-                <div class="stat-mini-item"><div class="stat-mini-icon bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"><i class="fa-solid fa-tv"></i></div><div><p class="text-[10px] text-gray-400 font-bold">剧集</p><p class="text-lg md:text-2xl font-black text-gray-800 dark:text-white truncate" id="lib-series">-</p></div></div>
-                <div class="stat-mini-item"><div class="stat-mini-icon bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400"><i class="fa-solid fa-layer-group"></i></div><div><p class="text-[10px] text-gray-400 font-bold">集数</p><p class="text-lg md:text-2xl font-black text-gray-800 dark:text-white truncate" id="lib-episodes">-</p></div></div>
+                <div class="stat-mini-item"><div class="stat-mini-icon bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400"><i class="fa-solid fa-film"></i></div><div><p class="text-[10px] text-gray-500 font-bold">电影</p><p class="text-lg md:text-2xl font-black text-gray-800 dark:text-white truncate" id="lib-movies">-</p></div></div>
+                <div class="stat-mini-item"><div class="stat-mini-icon bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400"><i class="fa-solid fa-tv"></i></div><div><p class="text-[10px] text-gray-500 font-bold">剧集</p><p class="text-lg md:text-2xl font-black text-gray-800 dark:text-white truncate" id="lib-series">-</p></div></div>
+                <div class="stat-mini-item"><div class="stat-mini-icon bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400"><i class="fa-solid fa-layer-group"></i></div><div><p class="text-[10px] text-gray-500 font-bold">集数</p><p class="text-lg md:text-2xl font-black text-gray-800 dark:text-white truncate" id="lib-episodes">-</p></div></div>
             </div>
         </div>
 
         <div class="glass-card stat-card-mobile">
-            <h3 class="text-xs md:text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 flex items-center"><i class="fa-solid fa-chart-pie mr-2"></i>运营数据</h3>
+            <h3 class="text-xs md:text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3 flex items-center"><i class="fa-solid fa-chart-pie mr-2"></i>运营数据</h3>
             <div class="flex gap-3 overflow-x-auto hide-scrollbar">
-                <div class="stat-mini-item"><div class="stat-mini-icon bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400"><i class="fa-solid fa-play"></i></div><div><p class="text-[10px] text-gray-400 font-bold">播放</p><p class="text-lg md:text-2xl font-black text-gray-800 dark:text-white truncate" id="stat-plays">-</p></div></div>
-                <div class="stat-mini-item"><div class="stat-mini-icon bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400"><i class="fa-solid fa-users"></i></div><div><p class="text-[10px] text-gray-400 font-bold">用户</p><p class="text-lg md:text-2xl font-black text-gray-800 dark:text-white truncate" id="stat-users">-</p></div></div>
-                <div class="stat-mini-item"><div class="stat-mini-icon bg-pink-50 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400"><i class="fa-solid fa-clock"></i></div><div><p class="text-[10px] text-gray-400 font-bold">时长</p><p class="text-lg md:text-2xl font-black text-gray-800 dark:text-white truncate" id="stat-duration">-</p></div></div>
+                <div class="stat-mini-item"><div class="stat-mini-icon bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400"><i class="fa-solid fa-play"></i></div><div><p class="text-[10px] text-gray-500 font-bold">播放</p><p class="text-lg md:text-2xl font-black text-gray-800 dark:text-white truncate" id="stat-plays">-</p></div></div>
+                <div class="stat-mini-item"><div class="stat-mini-icon bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400"><i class="fa-solid fa-users"></i></div><div><p class="text-[10px] text-gray-500 font-bold">用户</p><p class="text-lg md:text-2xl font-black text-gray-800 dark:text-white truncate" id="stat-users">-</p></div></div>
+                <div class="stat-mini-item"><div class="stat-mini-icon bg-pink-100 text-pink-600 dark:bg-pink-900/40 dark:text-pink-400"><i class="fa-solid fa-clock"></i></div><div><p class="text-[10px] text-gray-500 font-bold">时长</p><p class="text-lg md:text-2xl font-black text-gray-800 dark:text-white truncate" id="stat-duration">-</p></div></div>
             </div>
         </div>
     </div>
 
     <div class="glass-card w-full stat-card-mobile">
-        <h3 class="text-xs md:text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 flex items-center">
+        <h3 class="text-xs md:text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3 md:mb-5 flex items-center">
             <i class="fa-solid fa-photo-film mr-2"></i>我的媒体库
         </h3>
         <div id="library-container" class="flex overflow-x-auto hide-scrollbar gap-3 snap-x md:grid md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 md:gap-5 md:overflow-visible">
@@ -122,7 +142,7 @@
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-8 md:gap-6">
         
         <div class="glass-card flex flex-col mobile-borderless">
-            <div class="flex items-center justify-between mb-4 md:mb-5 px-1 md:px-0">
+            <div class="flex items-center justify-between mb-3 md:mb-5 section-title-mobile">
                 <h3 class="text-base md:text-lg font-black text-gray-800 dark:text-gray-200 flex items-center">
                     <span class="w-1 h-4 bg-blue-500 rounded-full mr-2.5"></span>最近入库
                 </h3>
@@ -133,7 +153,7 @@
         </div>
 
         <div class="glass-card flex flex-col mobile-borderless">
-            <div class="flex items-center justify-between mb-4 md:mb-5 px-1 md:px-0">
+            <div class="flex items-center justify-between mb-3 md:mb-5 section-title-mobile">
                 <h3 class="text-base md:text-lg font-black text-gray-800 dark:text-gray-200 flex items-center">
                     <span class="w-1 h-4 bg-green-500 rounded-full mr-2.5"></span>最近播放
                 </h3>
@@ -174,17 +194,7 @@
 
     document.getElementById('current-date').innerText = new Date().toLocaleDateString('zh-CN', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
 
-    window.addEventListener('theme-change', () => {
-        if(trendChart) {
-            const isDark = document.documentElement.classList.contains('dark');
-            const gridColor = isDark ? '#374151' : '#f3f4f6';
-            const textColor = isDark ? '#9ca3af' : '#9ca3af';
-            trendChart.options.scales.y.grid.color = gridColor;
-            trendChart.options.scales.x.ticks.color = textColor;
-            trendChart.options.scales.y.ticks.color = textColor;
-            trendChart.update();
-        }
-    });
+    window.addEventListener('theme-change', () => { if(trendChart) trendChart.update(); });
 
     async function init() {
         await loadUsers();
@@ -279,7 +289,7 @@
         } catch (error) { console.error(error); }
     }
 
-    // 媒体库：📱 修改点：w-[60vw]，显示1.5张
+    // 媒体库：📱 修改点：w-60 (约1.5个)
     async function fetchLibraries() {
         const container = document.getElementById('library-container');
         try {
@@ -290,7 +300,7 @@
                 json.data.forEach(lib => {
                     const imgUrl = `/api/proxy/image/${lib.Id}/primary`; 
                     html += `
-                    <div class="relative w-[60vw] md:w-full aspect-video flex-shrink-0 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition group cursor-pointer snap-center bg-gray-200 dark:bg-gray-800">
+                    <div class="relative w-60 md:w-full aspect-video flex-shrink-0 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition group cursor-pointer snap-center bg-gray-200 dark:bg-gray-800">
                         <img src="${imgUrl}" class="w-full h-full object-cover group-hover:scale-105 transition duration-700" onerror="this.src='https://img.hotimg.com/a444d32a033994d5b.png'">
                         <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-end p-5">
                             <h4 class="text-white font-bold text-lg md:text-xl drop-shadow-md truncate w-full tracking-wide">${lib.Name}</h4>
@@ -302,7 +312,7 @@
         } catch (e) { console.error(e); }
     }
     
-    // 最近入库：📱 修改点：w-24 (96px)，显示3.5张
+    // 最近入库：📱 修改点：w-24 (96px)，显示3.5个
     async function fetchLatest() {
         const container = document.getElementById('latest-container');
         try {
