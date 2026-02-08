@@ -30,7 +30,7 @@ class TelegramBot:
         self.poll_thread.start()
         self.schedule_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
         self.schedule_thread.start()
-        print("🤖 Bot Service Started (Deep Search Mode)")
+        print("🤖 Bot Service Started (Lite Mode)")
 
     def stop(self): self.running = False
 
@@ -108,35 +108,7 @@ class TelegramBot:
             user = data.get("User", {})
             item = data.get("Item", {})
             session = data.get("Session", {})
-            host = cfg.get("emby_host")
-            key = cfg.get("emby_api_key")
-
-            # 🔥 [修复] 进度 0% 问题
-            # 1. 尝试从 Webhook 数据获取总时长
-            total_ticks = item.get("RunTimeTicks", 0)
             
-            # 2. 如果 Webhook 没给时长 (常见问题)，手动调用 API 查一次详情
-            if total_ticks == 0 and item.get("Id") and host and key:
-                try:
-                    res = requests.get(f"{host}/emby/Items/{item['Id']}?api_key={key}", timeout=5)
-                    if res.status_code == 200:
-                        full_item = res.json()
-                        total_ticks = full_item.get("RunTimeTicks", 0)
-                        # 顺便更新一下 Item 信息，防止其他字段也缺
-                        item.update(full_item) 
-                except Exception as e:
-                    logger.warning(f"Fetch item details failed: {e}")
-
-            # 3. 获取当前播放位置 (优先取 PlaybackPositionTicks，其次取 Session 中的 PositionTicks)
-            current_ticks = data.get("PlaybackPositionTicks")
-            if current_ticks is None:
-                current_ticks = session.get("PlayState", {}).get("PositionTicks", 0)
-            
-            # 4. 计算百分比
-            pct = "0.00%"
-            if total_ticks > 0:
-                pct = f"{(current_ticks / total_ticks * 100):.2f}%"
-
             # 构建标题
             title = item.get("Name", "未知内容")
             if item.get("SeriesName"): 
@@ -147,10 +119,10 @@ class TelegramBot:
             emoji = "▶️" if action == "start" else "⏹️"; act = "开始播放" if action == "start" else "停止播放"
             ip = session.get("RemoteEndPoint", "127.0.0.1"); loc = self._get_location(ip)
             
+            # 🔥 修改点：删除了“进度”行，更加清爽
             msg = (f"{emoji} <b>【{user.get('Name')}】{act}</b>\n"
                    f"📺 {title}\n"
                    f"📚 类型：{type_cn}\n"
-                   f"🔄 进度：{pct}\n"
                    f"🌐 地址：{ip} ({loc})\n"
                    f"📱 设备：{session.get('Client')} on {session.get('DeviceName')}\n"
                    f"🕒 时间：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -245,17 +217,16 @@ class TelegramBot:
         elif text.startswith("/check"): self._cmd_check(cid)
         elif text.startswith("/help"): self._cmd_help(cid)
 
-    # 🔥 [修复] 最近入库查询失败 (增加错误处理 + 精简 Fields)
+    # 🔥 修复：最近入库查询失败 (增加错误处理 + 精简 Fields)
     def _cmd_latest(self, cid):
         key = cfg.get("emby_api_key"); host = cfg.get("emby_host")
         try:
-            # 增加 Fields 参数，只查必要字段，防止 Emby 4.10+ 因加载全量数据导致 500 错误
+            # 只查必要字段，防止 Emby 4.10+ 因加载全量数据导致 500 错误
             fields = "DateCreated,Name,SeriesName,ProductionYear"
             url = f"{host}/emby/Items?SortBy=DateCreated&SortOrder=Descending&IncludeItemTypes=Movie,Episode&Limit=5&Recursive=true&Fields={fields}&EnableTotalRecordCount=false&api_key={key}"
             
-            res = requests.get(url, timeout=15) # 增加超时时间
+            res = requests.get(url, timeout=15)
             if res.status_code != 200:
-                logger.error(f"Latest command failed: HTTP {res.status_code} - {res.text}")
                 return self.send_message(cid, f"❌ 查询失败: Emby 返回 HTTP {res.status_code}")
 
             items = res.json().get("Items", [])
@@ -272,9 +243,6 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Latest Error: {e}")
             self.send_message(cid, f"❌ 查询失败: {str(e)}")
-
-    # ... (其他命令保持不变，这里省略以节省篇幅，实际部署时请保留下方所有辅助函数) ...
-    # ⚠️ 为保证代码完整性，下面补全其余函数，直接复制即可
 
     def _extract_tech_info(self, item):
         sources = item.get("MediaSources", [])
